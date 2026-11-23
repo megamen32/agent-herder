@@ -287,7 +287,8 @@ body { font-size: 15px; -webkit-font-smoothing: antialiased; }
 
 /* чип модели: подпись, пометка «по умолчанию», шеврон */
 .composer-model {
-  grid-area: model;
+  grid-area: tier;
+  justify-self: end;
   align-self: center;
   display: inline-flex;
   align-items: center;
@@ -305,17 +306,18 @@ body { font-size: 15px; -webkit-font-smoothing: antialiased; }
 .composer-model:hover, .composer-model.open { background: var(--surface-hover); color: var(--text); }
 .composer-model:disabled { opacity: .6; }
 .composer-model-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-model-tier { flex: 0 0 auto; color: var(--muted); white-space: nowrap; }
 .composer-model-default { flex: 0 0 auto; color: var(--muted); font-size: 10px; }
 .composer-model-chevron { flex: 0 0 auto; color: var(--muted); font-size: 9px; }
 .composer-model-menu {
   position: absolute;
   z-index: 40;
   bottom: calc(100% - 4px);
-  right: 46px;
+  right: 84px;
   display: grid;
   gap: 2px;
-  width: max(260px, 44vw);
-  max-height: 260px;
+  width: min(370px, calc(100% - 24px));
+  max-height: min(480px, 60vh);
   overflow-y: auto;
   padding: 5px;
   border: 1px solid var(--border-2);
@@ -324,7 +326,8 @@ body { font-size: 15px; -webkit-font-smoothing: antialiased; }
   box-shadow: var(--shadow-menu);
   text-align: left;
 }
-.composer-model-menu button {
+.composer-model-options { display: grid; gap: 2px; min-width: 0; }
+.composer-model-options button {
   padding: 6px 9px;
   border: 0;
   border-radius: var(--radius-s);
@@ -334,8 +337,8 @@ body { font-size: 15px; -webkit-font-smoothing: antialiased; }
   text-align: left;
   overflow-wrap: anywhere;
 }
-.composer-model-menu button:hover { background: var(--surface-hover); color: var(--text); }
-.composer-model-menu button.current { color: var(--text); box-shadow: inset 2px 0 0 var(--accent); }
+.composer-model-options button:hover { background: var(--surface-hover); color: var(--text); }
+.composer-model-options button.current { color: var(--text); box-shadow: inset 2px 0 0 var(--accent); }
 .composer-model-note { padding: 6px 9px; color: var(--muted); font-size: var(--text-xs); }
 .composer-model-note.error { color: var(--status-error); }
 

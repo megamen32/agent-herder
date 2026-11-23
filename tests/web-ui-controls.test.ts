@@ -134,6 +134,7 @@ describe("mobile chat and session controls", () => {
     expect(main).toContain('aria-label="Прикрепить файл или изображение"');
     expect(main).toContain('className="composer-attachment-menu"');
     expect(main).toContain('<ServiceTierPanel embedded');
+    expect(main).not.toContain('<ServiceTierControl');
     expect(serviceTier).toContain('className="service-tier-spark"');
     expect(main).toContain('void runAction("stop")');
     expect(main).toContain('stop={(activeSession?.status === "running" || sending) && !composer.trim() && !composerImages.length ? { busy: stopSending, onStop: () => void runAction("stop") } : undefined}');
@@ -609,7 +610,7 @@ describe("чип модели в композере", () => {
     expect(shortModelLabel("gpt-6.1-sol")).toBe("gpt-6.1-sol");
     expect(shortModelLabel(undefined)).toBe("Модель по умолчанию");
     expect(main).toContain("по умолчанию");
-    expect(main).toContain('aria-label="Выбрать модель"');
+    expect(main).toContain('aria-label="Выбрать модель и режим ответа"');
   });
 
   it("прячет чип у харнесса, который не умеет менять модель", () => {
@@ -623,7 +624,7 @@ describe("чип модели в композере", () => {
     expect(modelSwitchSupported(adapters, "qoder")).toBe(false);
     expect(modelSwitchSupported(adapters, undefined)).toBe(false);
     expect(main).toContain("modelSwitchSupported(harnessAdapters, activeSession.harness)");
-    expect(main).toContain("{modelSwitchHarness && <button type=\"button\" className={`composer-model");
+    expect(main).toContain("{modelControlHarness && <button type=\"button\" className={`composer-model");
   });
 
   it("берёт список моделей харнесса и отмечает текущий выбор", () => {

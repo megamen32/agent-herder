@@ -17,7 +17,7 @@ import { LaunchPolicySettings } from "./launch-policy-settings.js";
 import { FallbackModelsSettings } from "./fallback-models-controls.js";
 import { SettingsScreen } from "./settings/settings-screen.js";
 import { SessionMetadata } from "./session-metadata.js";
-import { ServiceTierControl, ServiceTierPanel, useServiceTierControl } from "./service-tier-control.js";
+import { ServiceTierPanel, useServiceTierControl } from "./service-tier-control.js";
 import { AutopilotGoalPanel } from "./autopilot-goal-panel.js";
 import { NativePermissionStrip } from "./native-permission.js";
 import { ComposerQueue,canEditQueuedEntry } from "./composer-queue.js";
@@ -2133,6 +2133,7 @@ function App() {
     enabled: activeSession?.harness === "codex" && !remoteSelection && Boolean(directory.localHostId)
       && (!activeSession.hostId || activeSession.hostId === directory.localHostId),
   });
+  const modelControlHarness = modelSwitchHarness ?? (serviceTierControl.state ? "codex" : undefined);
   const loadModelOptions = React.useCallback(async (harness: string) => {
     setModelOptionsLoading(true);
     setModelSwitchError(undefined);
@@ -2149,10 +2150,10 @@ function App() {
   }, []);
   const toggleModelMenu = () => {
     if (modelMenuOpen) { setModelMenuOpen(false); return; }
-    if (!modelSwitchHarness) return;
+    if (!modelControlHarness) return;
     setModelMenuOpen(true);
     setModelSwitchError(undefined);
-    void loadModelOptions(modelSwitchHarness);
+    if (modelSwitchHarness) void loadModelOptions(modelSwitchHarness);
   };
   const changeSessionModel = async (model: string) => {
     if (!detailsVerified || cachedDetails || !activeKey || !modelSwitchHarness || modelSwitching) return;
@@ -2689,19 +2690,23 @@ function App() {
             event.preventDefault();
             if (isResumeMode && !queueEdit) void runAction("resume"); else void sendMessage();
           }} />
-          {serviceTierControl.state && <ServiceTierControl key={`${directory.localHostId}:${activeSession?.id ?? "none"}`} model={shortModelLabel(composerModel).replace(/\$(?:max|high|low|enabled)$/, "")} {...serviceTierControl} />}
-          {modelSwitchHarness && <button type="button" className={`composer-model ${modelMenuOpen ? "open" : ""}`} aria-label="Выбрать модель" aria-expanded={modelMenuOpen} aria-haspopup="listbox" disabled={modelSwitching} onClick={toggleModelMenu}>
+          {modelControlHarness && <button type="button" className={`composer-model ${modelMenuOpen ? "open" : ""}`} aria-label="Выбрать модель и режим ответа" aria-expanded={modelMenuOpen} aria-haspopup="dialog" disabled={modelSwitching} onClick={toggleModelMenu}>
             <span className="composer-model-name" title={composerModel ? modelOptionLabel(composerModel) : undefined}>{shortModelLabel(composerModel).replace(/\$(?:max|high|low|enabled)$/, "")}</span>
+            {serviceTierControl.state?.serviceTier && <span className="composer-model-tier">{serviceTierControl.state.serviceTier === "fast" ? "Быстро" : "Обычный"}</span>}
             {!activeSession?.model && <span className="composer-model-default">по умолчанию</span>}
             <span className="composer-model-chevron" aria-hidden="true">▾</span>
           </button>}
-          {modelMenuOpen && modelSwitchHarness && <div className="composer-model-menu" role="listbox" aria-label={`Модели ${modelSwitchHarness}`}>
+          {modelMenuOpen && modelControlHarness && <div className="composer-model-menu" role="dialog" aria-label={`Модель и режим ответа ${modelControlHarness}`}>
             {serviceTierControl.state && <ServiceTierPanel embedded model={shortModelLabel(composerModel).replace(/\$(?:max|high|low|enabled)$/, "")} {...serviceTierControl} />}
+            {modelSwitchHarness && <>
             <div className="composer-model-note">{composerModelPending ? "Выбранная модель применится со следующего ответа — нативная ещё не переключилась." : "Модель для следующих ответов в этой сессии. История сохраняется."}</div>
             {modelSwitchError && <div className="composer-model-note error" role="alert">{modelSwitchError}</div>}
             {modelOptionsLoading && <div className="composer-model-note">Загружаю модели…</div>}
             {!modelOptionsLoading && modelOptionsHarness === modelSwitchHarness && modelOptions.length === 0 && <div className="composer-model-note">Сервер не вернул моделей для {modelSwitchHarness}.</div>}
+            <div className="composer-model-options" role="listbox" aria-label={`Модели ${modelSwitchHarness}`}>
             {modelOptions.map((model) => <button type="button" role="option" aria-selected={model === currentModelOption(activeSession?.model, modelOptions)} className={model === currentModelOption(activeSession?.model, modelOptions) ? "current" : ""} key={model} onClick={() => void changeSessionModel(model)} title={model}>{modelOptionLabel(model)}{modelOptions.filter(option => shortModelLabel(option) === shortModelLabel(model)).length > 1 && <small className="model-provider">{modelSourceLabel(model)}</small>}</button>)}
+            </div>
+            </>}
           </div>}
           <VoiceComposerControl key={activeKey??"no-session"} sessionKey={activeKey??""} disabled={!activeKey||readOnlySession} onTranscript={appendVoiceTranscript} />
           {stopError && <span className="composer-stop-error" role="alert">{stopError}</span>}

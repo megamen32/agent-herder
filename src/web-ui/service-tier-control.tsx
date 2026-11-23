@@ -54,7 +54,7 @@ function tierLabel(selected: ServiceTier | undefined): string {
 export function ServiceTierPanel({ model, embedded = false, state, busy, error, refresh, change }: ServiceTierControlState & { model?: string; embedded?: boolean }) {
   const selected = state?.serviceTier;
   const label = tierLabel(selected);
-  return <div className={`service-tier-popover${embedded ? " embedded" : ""}`} role="dialog" aria-label="Режим ответа Codex">
+  return <div className={`service-tier-popover${embedded ? " embedded" : ""}`} role={embedded ? "group" : "dialog"} aria-label="Режим ответа Codex">
     <div className="service-tier-heading">
       <span className="service-tier-spark" aria-hidden="true">ϟ</span>
       <div><strong>{label}</strong>{model && <small>{model} ›</small>}</div>
@@ -63,7 +63,7 @@ export function ServiceTierPanel({ model, embedded = false, state, busy, error, 
     <div className="service-tier-track" role="group" aria-label="Режим ответа">
       {(["normal", "fast"] as const).map(tier => <button key={tier} type="button" className={`service-tier-option ${selected === tier ? "selected" : ""}`} aria-pressed={selected === tier} disabled={busy || !state?.canSet || selected === tier} onClick={() => void change(tier)}>
         <span className="service-tier-dot" aria-hidden="true" />
-        <span>{tier === "fast" ? "Быстро" : "Обычный ответ"}</span>
+        <span>{tier === "fast" ? "Быстро" : embedded ? "Обычный" : "Обычный ответ"}</span>
       </button>)}
     </div>
     <small className="service-tier-help">Применяется со следующего ответа. Текущая работа продолжается. Быстрый режим расходует больше квоты.</small>
