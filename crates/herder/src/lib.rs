@@ -6,6 +6,7 @@ pub mod adapters {
     pub mod cdp;
     pub mod codex {
         pub mod connection;
+        pub mod inventory;
         pub mod control;
         pub mod create;
         pub mod read;
