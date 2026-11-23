@@ -181,7 +181,7 @@ describe("mobile chat and session controls", () => {
     expect(header).toContain('aria-label="Панель сессии"');
     expect(main).toContain('className="chat-menu nav-flyout"');
     for (const label of ['>Машины<', '>Задачи<', '>Статистика<', '>Автопилот<', '>Автопродолжение<']) expect(header).not.toContain(label);
-    expect(main).toContain('onMachines={() => { setShowSearch(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setShowProjects(false); setMobileView("chat"); setFleetCreationMode(false);setShowFleet(true)');
+    expect(main).toContain('onMachines={() => { closeCreateSession(); setShowSearch(false); setShowJobs(false); setShowStatistics(false); setShowQuota(false); setShowProjects(false); setMobileView("chat"); setFleetCreationMode(false);setShowFleet(true)');
     expect(main).toContain('Автопилот · общие настройки (в этом чате');
     expect(main).toContain('Автопродолжение · общие настройки (в этом чате');
     expect(menu).toContain('Автопродолжение · общие настройки (в этом чате ${activeAutocontinueEnabled ? "включено" : "выключено"})');
