@@ -51,7 +51,8 @@ describe("fleet creation through the caller and owner MCPs", () => {
       expect(conflict.structuredContent).toMatchObject({ ok: false, created: false, reason: "input_id_conflict" });
       expect(ownerCreates).toBe(1);
       expect(localCreates).toBe(0);
-      await getHumanStopStore().hold({ harness: "codex", id: "held-session", cwd: await realpath("/tmp"), title: "ci-stopped" }, { id: "human-stop-test", at: new Date().toISOString(), reason: "explicit-stop" });
+      await getHumanStopStore().hold({ harness: "codex", id: "held-session", cwd: await realpath("/tmp"), title: "ci-stopped" }, { id: "explicit-stop:human-stop-test", at: new Date().toISOString(), reason: "explicit-stop" });
+      expect(await getHumanStopStore().isHeld("codex", "held-session")).toBe(true);
       const stopped = await consumer.callTool({ name: "create_session", arguments: { ...args, name: "ci-stopped" } });
       expect(stopped.structuredContent).toMatchObject({ ok: false, created: false, state: "not_attempted" });
       expect(ownerCreates).toBe(1);

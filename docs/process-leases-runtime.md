@@ -371,6 +371,22 @@ python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-rollout.py" recover \
   --scheduler-proof "<fresh private paired TS receipt>"
 ~~~
 
+The coordinator pins the first verified post-ACK native pair in
+`state.json.restart_runtime_capture` while the release guard is held. It records
+the exact restart ACK digest and the pair before waiting on either consumer.
+A later scheduler failure leaves the capture in the UNKNOWN checkpoint.
+
+For canonical reconciliation, the normal
+`process-leases-reconcile.py prepare --native-restart-binding ...` accepts a
+`herder-native-receipt-source-binding` with `runtime_capture_sha256` set to
+`process-leases-rollout.py`'s `json_hash` of that checkpoint field. The audit
+still pins the original typed restart result and original typed child status.
+Pass the pinned provider parser for a full provider task envelope. A retained
+typed projection with `operation` and `reply` is also supported. The capture supplies the historical OS identity. If the
+pair changed, also supply the positively verified typed status of the successor
+and the pinned parser. Apply still requires fresh native and scheduler consumer
+receipts. Older jobs without a capture use the existing historical audit path.
+
 For the legacy ledger, recover can settle durable occupancy after those observations under a new held release guard. It changes no selector and performs no restart. A mixed or unrelated configuration is refused.
 
 For a canonical UNKNOWN execution binding, recover records the evidence and
@@ -381,6 +397,29 @@ admits a new fenced lease; status continues to expose `reconcileRequired: true`.
 A live claim, a busy target lock, or missing identity evidence still requires
 reviewed reconciliation and blocks takeover. `cleanup:true` is valid only on
 the continuously held original guard channel; it is not a recovery entrypoint.
+
+### Start a distinct release after archived UNKNOWN
+
+For the next normal `process-leases-rollout.py run` on server100, add:
+
+~~~sh
+--supersede-job "$OLD_JOB_DIR" \
+--supersede-restart-provider "$OLD_RESTART_JOB_JSON" \
+--supersede-consumer-provider "$OLD_TOOLS_JOB_JSON"
+~~~
+
+Use full GPTAdmin `job` responses (`detail=full`) for the two original
+operation IDs in the old job receipts. Supply the normal new candidate,
+explicit `--release-state`, exact `--target`, new proof and currently verified
+PID pair. The canonical manager must already have archived the old claim
+binding when granting the higher fence. Keep the private original proof
+available so admission can derive and check that archive's exact claim ID.
+
+Under the new guard, the coordinator verifies the old installed candidate,
+both settled provider operations and the new baseline. It uses a digest CAS
+to transfer the selector pointer and saves the previous pointer bytes and
+evidence digests in the new job. The old checkpoint remains UNKNOWN. The new
+release then follows its normal install and acceptance sequence.
 
 The backup retains exact previous selector/launcher bytes, hashes and modes, including evidence for a half-completed two-file switch. Library rollback validates those hashes and rejects a newer unrelated release; it requires a held mutation admission. Configuration restoration and restart after an uncertain result require a reviewed recovery procedure. Restoring a selector alone cannot migrate active process rules back to an older core. Preserve common stores, workers, claims, wake intents and authority databases; never restore an old DB snapshot to simulate rollback.
 

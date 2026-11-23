@@ -578,6 +578,39 @@ def lost_receipt_case(rpc, start, fixture, setup, name, args, record):
     record["replay_task"] = replay_id
 
 
+def zai_recovery_refusal(binary, home, fixture, setup, record, stack):
+    rpc = JsonLines([binary, "--harness", "zai", "--node", NODE, "--instance", INSTANCE],
+                    {**private_env(home), **setup["env"]}, home)
+    stack.callback(rpc.close)
+    hello = rpc.call("initialize", {"harness": "zai", "ahapVersion": "0.1"})
+    exact(hello["capabilities"]["nativeProtocol"], "herder-extension", "native protocol")
+    exact(hello["capabilities"]["browserFeatures"]["guardedRecovery"], False, "guarded recovery capability")
+    check(fixture.call("waitExtension"), "extension did not connect to Rust")
+    rpc.call("init")
+    route = setup["seedIds"][0]
+    session = native_ids("zai", [route])[0]
+    failure = fixture.call("failedTurn", {"id": route})
+    exact(failure["httpStatus"], 429, "fixture terminal failure")
+    exact(rpc.call("getRecoveryBoundary", {"id": session}), None, "unproven recovery boundary")
+    before = fixture.call("snapshot")
+    [recovery] = [call for call in before["extensionCalls"] if call["op"] == "recovery"]
+    exact((recovery["lastRunStatus"], recovery["available"]), ("failed", False),
+          "extension saw terminal failure without an attributable boundary")
+    for key, supplied in (
+        ("fixture-recovery", {"turnId": failure["turnId"], "inputItemId": failure["inputId"]}),
+        ("external-recovery", {"turnId": "external-turn", "inputItemId": "external-input"}),
+    ):
+        result = rpc.call("sendMessage", {
+            "id": session, "options": {"queue": True, "message": PROMPT, "inputId": key},
+            "expectedRecovery": supplied,
+        })
+        exact(result["admission"], "not_submitted", key)
+    after = fixture.call("snapshot")
+    exact(after["documents"], before["documents"], "rejected recovery opened a provider document")
+    exact(after["extensionCalls"], before["extensionCalls"], "rejected recovery called the extension")
+    record.update(failed_turn=failure, recovery_boundary=None, admission=result["admission"])
+
+
 def recovery_case(fixture, setup, seed, refs, tool, rpc, start, activation, scenario, record):
     route, protected = setup["seedIds"]
     stop = tool("stop", action="stop", session_ref=refs[1], request_key="fixture-explicit-stop")
@@ -914,7 +947,9 @@ def run_case(args, bins, harness, surface, content, case):
                 check(setup["extension"], "extension manifest not loaded")
                 record["extension_version"] = setup["extension"]
             record.update(chrome=setup["version"], phase="seed inventory and exact reads")
-            if surface == "ahap":
+            if args.recovery == "zai-refusal":
+                zai_recovery_refusal(bins["herder-browser"], home, fixture, setup, record, stack)
+            elif surface == "ahap":
                 ahap_case(bins["herder-browser"], home, fixture, setup, harness, args.iterations, record, stack, media)
             else:
                 mcp_case(bins, home, fixture, setup, harness, args.iterations, record, stack,
@@ -924,7 +959,7 @@ def run_case(args, bins, harness, surface, content, case):
             exact(snapshot["pinnedRoute"], "/c/" + setup["seedIds"][1], "pinned tab moved off seed B")
             expected_sends = {"create": 1, "deliver": 2}.get(args.lost_receipt, 2)
             if args.recovery:
-                expected_sends = 0 if args.recovery == "stale" else 1
+                expected_sends = 0 if args.recovery in ("stale", "zai-refusal") else 1
             if media and not args.lost_receipt:
                 expected_sends = 4 if surface == "mcp" else 3
             exact(len(snapshot["sends"]), expected_sends, "total browser submits")
@@ -953,8 +988,8 @@ def main():
     parser.add_argument("--content", choices=["text", "attachments"], help="default: run both in separate fixtures")
     parser.add_argument("--lost-receipt", nargs="?", const="create", choices=["create", "deliver"],
                         help="withhold the accepted submit's native receipt (default: create), then replay through MCP")
-    parser.add_argument("--recovery", choices=["success", "failed-retry", "lost-receipt", "lost-ack", "stale"],
-                        help="exercise the native ChatGPT recovery scheduler in a disposable browser")
+    parser.add_argument("--recovery", choices=["success", "failed-retry", "lost-receipt", "lost-ack", "stale", "zai-refusal"],
+                        help="exercise ChatGPT recovery or unsupported Z.ai recovery in a disposable browser")
     parser.add_argument("--iterations", default=20, type=int)
     parser.add_argument("--output", type=Path, help="fresh receipt directory")
     args = parser.parse_args()
@@ -964,11 +999,15 @@ def main():
         if args.surface == "ahap":
             parser.error("--lost-receipt uses the owner MCP surface")
         args.surface = "mcp"
-    if args.recovery:
+    if args.recovery == "zai-refusal":
+        if args.lost_receipt or args.harness == "chatgpt" or args.surface == "mcp" or args.content == "attachments":
+            parser.error("--recovery zai-refusal uses the Z.ai extension-backed AHAP text surface")
+        args.harness, args.surface, args.content, args.extension = "zai", "ahap", "text", True
+    elif args.recovery:
         if args.lost_receipt or args.harness == "zai" or args.surface == "ahap" or args.content == "attachments":
             parser.error("--recovery uses the ChatGPT owner MCP text surface")
         args.harness, args.surface, args.content = "chatgpt", "mcp", "text"
-    if args.extension and args.surface != "mcp":
+    if args.extension and args.surface != "mcp" and args.recovery != "zai-refusal":
         parser.error("--extension uses the owner MCP surface")
     if args.recovery == "lost-ack" and not args.extension:
         parser.error("--recovery lost-ack requires the Herder extension")

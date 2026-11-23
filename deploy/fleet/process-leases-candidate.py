@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import sqlite3
 import stat
 import subprocess
 import sys
@@ -877,16 +878,22 @@ def validate_herder_extension(env):
             raise ValueError()
     except ValueError:
         raise ValueError("Herder extension listener must use a loopback address and a fixed port") from None
+    extension_token(env["AHAP_BROWSER_EXTENSION_TOKEN_FILE"])
+
+
+def extension_token(path):
     try:
-        path = private_file(env["AHAP_BROWSER_EXTENSION_TOKEN_FILE"])
+        path = private_file(path)
         with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as stream:
             info = os.fstat(stream.fileno())
             if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077
                     or info.st_nlink != 1 or info.st_size > 130):
                 raise ValueError()
-            token = stream.read(131)
-            if len(token) > 130 or re.fullmatch(rb"[A-Za-z0-9_-]{32,128}", token.rstrip(b"\r\n")) is None:
+            raw = stream.read(131)
+            token = raw.rstrip(b"\r\n")
+            if len(raw) > 130 or re.fullmatch(rb"[A-Za-z0-9_-]{32,128}", token) is None:
                 raise ValueError()
+            return token
     except (OSError, ValueError):
         raise ValueError("invalid private Herder extension token file") from None
 
@@ -898,30 +905,147 @@ def validate_browser_transport(env):
         validate_direct_cdp(env)
 
 
-def read_browser_binding(pin, bundle, kind, profile_hash):
-    """Authenticate independent operator input. Receipts contain only the file pin."""
+def read_browser_pin(pin, bundle, label):
+    """Read an independent, digest-pinned operator input."""
     if (not isinstance(pin, dict) or set(pin) != {"path", "sha256"}
             or not isinstance(pin["path"], str) or not isinstance(pin["sha256"], str)
             or not re.fullmatch(r"[a-f0-9]{64}", pin["sha256"])):
-        raise ValueError("invalid private browser binding pin")
+        raise ValueError("invalid private " + label + " pin")
     path = canonical(pin["path"])
     if path.is_relative_to(bundle):
-        raise ValueError("browser binding must be independent of the candidate")
+        raise ValueError(label + " must be independent of the candidate")
     private_directory(path.parent)
     with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as stream:
         info = os.fstat(stream.fileno())
         if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077
                 or info.st_nlink != 1 or info.st_size > 16384):
-            raise ValueError("expected a private owner-controlled browser binding")
+            raise ValueError("expected a private owner-controlled " + label)
         raw = stream.read(16385)
     if len(raw) > 16384 or hashlib.sha256(raw).hexdigest() != pin["sha256"]:
-        raise ValueError("private browser binding digest mismatch")
-    binding = strict_json(raw)
+        raise ValueError("private " + label + " digest mismatch")
+    return strict_json(raw)
+
+
+def read_browser_binding(pin, bundle, kind, profile_hash):
+    binding = read_browser_pin(pin, bundle, "browser binding")
     required = {"kind", "profile_sha256", "ahap_env"}
     if (not isinstance(binding, dict) or set(binding) not in (required, required | {"browser_recovery"})
             or binding["kind"] != kind or binding["profile_sha256"] != profile_hash):
         raise ValueError("private browser binding does not select this provider and protected profile")
     return binding
+
+
+def browser_registration_authority(pin, bundle):
+    seed = read_browser_pin(pin, bundle, "authority seed")
+    directory = Path(pin["path"]).parent
+    home = private_directory(directory.parent)
+    generation = seed.get("generation") if isinstance(seed, dict) else None
+    database, gate = directory / "state.db", directory / "gate"
+    if (home.name != "herder-owner-home" or directory != home / "authority"
+            or Path(pin["path"]) != directory / "seed.json"
+            or not isinstance(generation, str) or not re.fullmatch(r"ahap-owner-[0-9]+", generation)
+            or seed != {"database": str(database), "gate": str(gate),
+                        "generation": generation, "profile_seed": pin["path"]}):
+        raise ValueError("expected an owner-bootstrap authority seed")
+    for ancestor in home.parents:
+        info = ancestor.stat()
+        if info.st_uid not in (0, os.getuid()) or info.st_mode & 0o022:
+            raise ValueError("browser authority requires protected ancestors")
+    dm, gm = private_file(database).stat(), private_file(gate).stat()
+    identity = (generation, gm.st_dev, gm.st_ino, dm.st_dev, dm.st_ino)
+    suffixes = ("-journal", "-wal", "-shm")
+    if any(os.path.lexists(str(database) + suffix) for suffix in suffixes):
+        raise ValueError("browser registration requires a fresh offline authority")
+    # Bootstrap closes the new database before emitting a seed. Immutable read
+    # access cannot create SQLite sidecars, even during repeated candidate checks.
+    try:
+        with contextlib.closing(sqlite3.connect(database.as_uri() + "?mode=ro&immutable=1", uri=True)) as db:
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+            pinned = db.execute(
+                "SELECT generation, gate_device, gate_inode, database_device, database_inode "
+                "FROM humanstop_authority WHERE singleton=1").fetchone()
+            if version != 4 or pinned != identity:
+                raise ValueError("browser authority identity does not match bootstrap seed")
+            for table in ("intents", "session_bindings", "humanstop_sessions"):
+                if db.execute("SELECT 1 FROM " + table + " LIMIT 1").fetchone():
+                    raise ValueError("browser registration requires a fresh offline authority")
+    except sqlite3.Error:
+        raise ValueError("invalid browser bootstrap authority") from None
+    database_sha256 = digest(database)
+    current = private_file(database).stat()
+    if (not os.path.samestat(dm, current) or dm.st_mtime_ns != current.st_mtime_ns or dm.st_size != current.st_size
+            or not os.path.samestat(gm, private_file(gate).stat())
+            or any(os.path.lexists(str(database) + suffix) for suffix in suffixes)):
+        raise ValueError("browser authority identity changed during verification")
+    authority = {"directory": str(directory), "database_sha256": database_sha256,
+                 "database_device": dm.st_dev, "database_inode": dm.st_ino,
+                 "gate_device": gm.st_dev, "gate_inode": gm.st_ino}
+    return {"database": str(database), "gate": str(gate), "generation": generation}, authority
+
+
+def browser_registration_plan(base, selection, bundle, registration):
+    if not isinstance(registration, dict) or set(registration) != {"kind", "instance", "binding"}:
+        raise ValueError("invalid browser registration")
+    kind, instance = registration["kind"], registration["instance"]
+    config = read_json(base["process_config"])
+    node = config["node_ref"]
+    binding = read_browser_pin(registration["binding"], bundle, "browser binding")
+    if (not isinstance(kind, str) or kind not in BROWSER_KINDS
+            or not isinstance(instance, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}", instance)
+            or not isinstance(binding, dict) or set(binding) != {"kind", "node", "instance", "authority_seed", "ahap_env"}
+            or (binding["kind"], binding["node"], binding["instance"]) != (kind, node, instance)):
+        raise ValueError("browser registration requires the exact kind, node and instance")
+    env = binding["ahap_env"]
+    validate_herder_extension(env)
+    token_file = canonical(env["AHAP_BROWSER_EXTENSION_TOKEN_FILE"])
+    if token_file.is_relative_to(bundle):
+        raise ValueError("browser registration token must be independent of the candidate")
+    token = extension_token(token_file)
+    port = int(env["AHAP_BROWSER_EXTENSION_LISTEN"].rsplit(":", 1)[1])
+    profile, authority = browser_registration_authority(binding["authority_seed"], bundle)
+    directory = Path(authority["directory"])
+    if any(bundle.is_relative_to(Path(root)) for root in
+           (directory.parent, config["execution_root"], config["resources"]["root"])):
+        raise ValueError("browser candidate output must be outside authority and process stores")
+    snapshots, principals = {}, set()
+    same_provider = False
+    for path in selection["profiles"]:
+        previous = private_file(path)
+        raw = previous.read_bytes()
+        snapshots[path] = hashlib.sha256(raw).hexdigest()
+        selected = strict_json(raw)
+        owner = selected["owner"]
+        principals.add(owner["principal"])
+        if (owner.get("node"), owner.get("instance")) == (node, instance):
+            raise ValueError("browser instance is already selected")
+        if (previous.parent == directory or selected.get("generation") == profile["generation"]
+                or any(Path(selected[field]).resolve() in (Path(profile["database"]), Path(profile["gate"]))
+                       for field in ("database", "gate"))):
+            raise ValueError("browser registration must use a distinct authority")
+        old_env = owner.get("ahap_env", {})
+        if owner.get("kind") == kind:
+            same_provider |= owner.get("node") == node
+            if any(old_env.get(key) == env[BROWSER_SCOPE] for key in (BROWSER_SCOPE, USERIO_SCOPE)):
+                raise ValueError("browser account scope is already selected for this provider")
+        if owner.get("node") == node and old_env.get("AHAP_BROWSER_TRANSPORT") == "herder-extension":
+            if port == int(old_env["AHAP_BROWSER_EXTENSION_LISTEN"].rsplit(":", 1)[1]):
+                raise ValueError("browser extension listener port is already selected")
+            if token == extension_token(old_env["AHAP_BROWSER_EXTENSION_TOKEN_FILE"]):
+                raise ValueError("browser extension token is already selected")
+    if not same_provider or len(principals) != 1:
+        raise ValueError("browser registration requires a local provider and one existing principal")
+    profile["owner"] = {"principal": principals.pop(), "node": node, "instance": instance,
+                        "kind": kind, "executable": base["core"], "cwd": str(directory.parent),
+                        "code_home": str(directory.parent), "ahap_env": env}
+    payload = encoded(profile)
+    if len(payload) > 16384:
+        raise ValueError("protected profile exceeds native limit")
+    sha = hashlib.sha256(payload).hexdigest()
+    row = {"kind": kind, "instance": instance, "authority": authority,
+           "token_sha256": hashlib.sha256(token).hexdigest(),
+           "path": str(directory / ("profile-browser-" + sha[:20] + ".json")),
+           "sha256": sha, "payload_sha256": sha, "payload": str(bundle / "profile-payloads" / (sha + ".json"))}
+    return snapshots, row, payload
 
 
 def check_browser_recovery(kind, recovery, *, installed):
@@ -1202,6 +1326,49 @@ def checked_native_rows(rows, planned, installed):
     return rebound
 
 
+def browser_registration_manifest(base, migration_path):
+    manifest = copy.deepcopy(base)
+    for key in ("adapter_migration", "native_profile_migration"):
+        manifest.pop(key, None)
+        manifest["sha256"].pop(key, None)
+    # Keep the installed native source pin for the existing browser-only
+    # scheduler compatibility check. No runtime component was rebuilt.
+    manifest.setdefault("process_leases_build", {"source_commit": base["source_commit"]})
+    manifest["native_profile_migration"] = str(migration_path)
+    manifest["sha256"]["native_profile_migration"] = digest(migration_path)
+    return manifest
+
+
+def browser_registration_transition(old, new, before, after, migration_path, migration, *, installed):
+    bundle = migration_path.parent
+    registration = migration["registration"]
+    snapshots, row, payload = browser_registration_plan(before, old, bundle, registration)
+    expected = {**old, "manifest": new["manifest"], "manifest_sha256": new["manifest_sha256"],
+                "profiles": [*old["profiles"], row["path"]]}
+    if new != expected:
+        raise ValueError("selector must append exactly the reviewed browser instance")
+    if (set(migration) != {"schema", "type", "kinds", "registration", "base_selector", "base_selector_sha256",
+                           "base_manifest", "base_manifest_sha256", "profile_sha256", "profiles"}
+            or migration["type"] != "herder-native-profile-rebind" or migration["kinds"] != [row["kind"]]
+            or migration["profile_sha256"] != snapshots or migration["profiles"] != [row]
+            or migration["base_manifest"] != old["manifest"]
+            or migration["base_manifest_sha256"] != old["manifest_sha256"]
+            or digest(private_file(old["manifest"])) != old["manifest_sha256"]
+            or after != browser_registration_manifest(before, migration_path)):
+        raise ValueError("candidate differs from the exact reviewed browser registration")
+    staged = Path(row["payload"])
+    private_directory(staged.parent)
+    if private_file(staged).read_bytes() != payload:
+        raise ValueError("staged browser profile differs from the reviewed binding")
+    target = Path(row["path"])
+    if installed:
+        if private_file(target).read_bytes() != payload:
+            raise ValueError("installed browser profile differs from the reviewed binding")
+    elif os.path.lexists(target):
+        raise FileExistsError("new protected profile destination already exists")
+    return migration
+
+
 def native_profile_transition(old, new, before, after, *, installed=False):
     bundle = private_file(new["manifest"]).parent
     migration_path = private_file(after["native_profile_migration"])
@@ -1214,6 +1381,8 @@ def native_profile_transition(old, new, before, after, *, installed=False):
     if not isinstance(migration, dict) or type(migration.get("schema")) is not int:
         raise ValueError("invalid native profile migration")
     schema = migration["schema"]
+    if schema == 2 and "registration" in migration:
+        return browser_registration_transition(old, new, before, after, migration_path, migration, installed=installed)
     recovering = schema in (1, 3) and migration.get("kind") == "recovery"
     if recovering:
         fields.add("kind")
@@ -1377,6 +1546,63 @@ def check_candidate(selector, launcher):
     return {**checked, "selector": str(selector), "selector_sha256": digest(selector),
             "profile_migration_sha256": migration_hash,
             "profile_validation": "staged_payloads_not_installed"}
+
+
+def stage_browser_registration(args):
+    """Compose one additive selector candidate against the installed release."""
+    selector, launcher = private_file(args.selector), private_file(args.launcher)
+    before = args.expected_selector_sha256
+    if digest(selector) != before:
+        raise ValueError("installed selector changed before browser registration")
+    selection = read_json(selector)
+    base = read_json(selection["manifest"])
+    checked = check_selector(selector, launcher)
+    source = base.get("process_leases_build", {}).get("source_commit", base["source_commit"])
+    if not isinstance(source, str) or not re.fullmatch(r"[a-f0-9]{40}", source):
+        raise ValueError("installed release is missing immutable native source provenance")
+    output = planned_path(args.output)
+    if os.path.lexists(output):
+        raise FileExistsError("candidate output already exists")
+    kind, instance, path, sha256 = args.browser_binding
+    registration = {"kind": kind, "instance": instance, "binding": {"path": path, "sha256": sha256}}
+    snapshots, row, payload = browser_registration_plan(base, selection, output, registration)
+    if os.path.lexists(row["path"]):
+        raise FileExistsError("new protected profile destination already exists")
+    launch_bytes = launcher.read_bytes()
+    output.mkdir(mode=0o700)
+    fixture = output / "fixture"
+    fixture.mkdir(mode=0o700)
+    candidate_launcher = fixture / "launch-v1-core.py"
+    create(candidate_launcher, launch_bytes, 0o500)
+    payload_dir = output / "profile-payloads"
+    payload_dir.mkdir(mode=0o700)
+    stage_native_payloads([(row, payload)])
+    migration_path = output / "native-profile-migration.json"
+    migration = {"schema": 2, "type": "herder-native-profile-rebind", "kinds": [kind], "registration": registration,
+                 "base_selector": str(selector), "base_selector_sha256": before,
+                 "base_manifest": selection["manifest"], "base_manifest_sha256": selection["manifest_sha256"],
+                 "profile_sha256": snapshots, "profiles": [row]}
+    create(migration_path, encoded(migration), 0o400)
+    manifest_path = output / "manifest.json"
+    create(manifest_path, encoded(browser_registration_manifest(base, migration_path)), 0o400)
+    proposed = {**selection, "manifest": str(manifest_path), "manifest_sha256": digest(manifest_path),
+                "profiles": [*selection["profiles"], row["path"]]}
+    proposed_path, staged_path = output / "selector.json", output / "check-selector.json"
+    create(proposed_path, encoded(proposed), 0o400)
+    create(staged_path, encoded({**proposed, "profiles": [*selection["profiles"], row["payload"]]}), 0o400)
+    create(output / "process-leases-build.json", encoded({
+        "source_commit": source, "base_selector": str(selector), "base_selector_sha256": before,
+        "base_manifest_sha256": selection["manifest_sha256"], "launcher_sha256": digest(candidate_launcher),
+        "profile_sha256": snapshots, "process_config_sha256": checked["process_config_sha256"],
+        "candidate_selector_sha256": digest(proposed_path), "candidate_manifest_sha256": proposed["manifest_sha256"],
+        "staged_selector_sha256": digest(staged_path), "profile_migration_sha256": digest(migration_path),
+    }), 0o400)
+    result = check_candidate(proposed_path, candidate_launcher)
+    if digest(launcher) != digest(candidate_launcher):
+        raise ValueError("installed launcher changed during browser registration")
+    for directory in (payload_dir, fixture, output):
+        directory.chmod(0o500)
+    return {**result, "status": "candidate_verified_not_installed", "base_selector_sha256": before}
 
 
 def build(args):
@@ -1557,6 +1783,9 @@ def install(args, *, guard=None):
         old, new = read_json(selector), read_json(candidate)
         old_manifest, candidate_manifest = read_json(old["manifest"]), read_json(new["manifest"])
         migration = profile_migration(old, new, old_manifest, candidate_manifest)
+        registration = migration is not None and "registration" in migration
+        if registration and old_launcher_hash != build_receipt["launcher_sha256"]:
+            raise ValueError("installed launcher changed since browser registration")
         if set(build_receipt["profile_sha256"]) != set(old["profiles"]):
             raise ValueError("candidate profile snapshot is incomplete")
         config = read_json(candidate_manifest["process_config"])
@@ -1574,15 +1803,18 @@ def install(args, *, guard=None):
             "selector_before_sha256": old_hash, "launcher_before_sha256": old_launcher_hash,
             "selector_after_sha256": digest(candidate), "launcher_after_sha256": digest(candidate_launcher),
             "selector_mode": stat.S_IMODE(selector.stat().st_mode), "launcher_mode": stat.S_IMODE(launcher.stat().st_mode),
-            "profiles_preserved": migration is None, "authority_preserved": True,
+            "profiles_preserved": migration is None or registration, "authority_preserved": True,
             "previous_profiles_unchanged": True, "databases_modified": False}
         if migration:
             receipt["profile_migration_sha256"] = candidate_manifest["sha256"].get("adapter_migration", candidate_manifest["sha256"].get("native_profile_migration"))
             receipt["profile_creation_intent"] = migration["profiles"]
         receipt_path = backup / "receipt.json"
         create(receipt_path, encoded(receipt))
+        if registration:
+            sync_dir(backup)
+            sync_dir(backup.parent)
         require_mutation_guard(guard, selector, "install")
-        receipt["state_roots"] = state_roots(config, provision=True)
+        receipt["state_roots"] = state_roots(config, provision=not registration)
         receipt["status"] = "state_prepared"
         replace(receipt_path, encoded(receipt), digest(receipt_path), 0o600)
         if migration:
@@ -1590,24 +1822,40 @@ def install(args, *, guard=None):
             # overwrite or adopt pre-existing siblings on a repeated attempt.
             for item in migration["profiles"]:
                 require_mutation_guard(guard, selector, "install")
-                previous = private_file(item["previous_path"])
-                if digest(previous) != item["previous_sha256"]:
-                    raise ValueError("previous profile changed before sibling creation")
                 target = Path(item["path"])
-                if (target.parent.resolve(strict=True) != previous.parent
-                        or item.get("authority_directory", str(previous.parent)) != str(previous.parent)):
-                    raise ValueError("profile authority directory changed before sibling creation")
-                target = previous.parent / target.name
-                create(target, private_file(item["payload"]).read_bytes(), 0o400)
+                payload = private_file(item["payload"]).read_bytes()
+                if registration:
+                    profile_migration(old, new, old_manifest, candidate_manifest)
+                    private_directory(target.parent)
+                    if hashlib.sha256(payload).hexdigest() != item["payload_sha256"]:
+                        raise ValueError("browser profile payload changed before creation")
+                else:
+                    previous = private_file(item["previous_path"])
+                    if digest(previous) != item["previous_sha256"]:
+                        raise ValueError("previous profile changed before sibling creation")
+                    if (target.parent.resolve(strict=True) != previous.parent
+                            or item.get("authority_directory", str(previous.parent)) != str(previous.parent)):
+                        raise ValueError("profile authority directory changed before sibling creation")
+                    target = previous.parent / target.name
+                create(target, payload, 0o400)
                 sync_dir(target.parent)
             profile_migration(old, new, old_manifest, candidate_manifest, installed=True)
             check_selector(candidate, candidate_launcher)
             receipt["status"] = "profiles_prepared"
             replace(receipt_path, encoded(receipt), digest(receipt_path), 0o600)
         require_mutation_guard(guard, selector, "install")
-        replace(launcher, candidate_launcher.read_bytes(), old_launcher_hash, receipt["launcher_mode"])
-        require_mutation_guard(guard, selector, "install")
-        replace(selector, candidate.read_bytes(), old_hash, receipt["selector_mode"])
+        if registration:
+            proposed = candidate.read_bytes()
+            if (digest(launcher) != old_launcher_hash
+                    or hashlib.sha256(proposed).hexdigest() != build_receipt["candidate_selector_sha256"]
+                    or digest(private_file(new["manifest"])) != new["manifest_sha256"]):
+                raise ValueError("browser registration changed before selector switch")
+            profile_migration(old, new, old_manifest, candidate_manifest, installed=True)
+            replace(selector, proposed, old_hash, receipt["selector_mode"])
+        else:
+            replace(launcher, candidate_launcher.read_bytes(), old_launcher_hash, receipt["launcher_mode"])
+            require_mutation_guard(guard, selector, "install")
+            replace(selector, candidate.read_bytes(), old_hash, receipt["selector_mode"])
         checked = check_selector(selector, launcher)
         receipt["status"] = "configured_pending_restart"
         replace(receipt_path, encoded(receipt), digest(receipt_path), 0o600)
@@ -1663,6 +1911,12 @@ def main():
                    help="reviewed successor profile for Codex inventory, shared socket, recovery handoff or session autopilot")
     b.add_argument("--browser-binding", action="append", nargs=3, default=[], metavar=("KIND", "FILE", "SHA256"),
                    help="pin a private operator-reviewed browser binding for a selected browser")
+    a = sub.add_parser("register-browser", help="stage one additional browser owner using the installed release")
+    for name in ("selector", "launcher", "output"):
+        a.add_argument("--" + name, required=True, type=Path)
+    a.add_argument("--expected-selector-sha256", required=True)
+    a.add_argument("--browser-binding", required=True, nargs=4, metavar=("KIND", "INSTANCE", "FILE", "SHA256"),
+                   help="pin the exact new browser instance and its private owner-bootstrap binding")
     c = sub.add_parser("check")
     c.add_argument("--selector", required=True, type=Path)
     c.add_argument("--launcher", required=True, type=Path)
@@ -1676,7 +1930,7 @@ def main():
     r.add_argument("--receipt", required=True, type=Path)
     args = p.parse_args()
     try:
-        result = {"build": build, "install": install, "rollback": rollback,
+        result = {"build": build, "register-browser": stage_browser_registration, "install": install, "rollback": rollback,
                   "check": lambda a: (check_candidate(a.selector, a.launcher) if a.staged_profiles
                                       else check_selector(a.selector, a.launcher))}[args.command](args)
         print(json.dumps(result, sort_keys=True))

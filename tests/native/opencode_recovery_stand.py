@@ -29,6 +29,7 @@ SHUTDOWN_MODEL = "recover-after-shutdown"
 NATIVE_STOPPED_MODEL = "native-interrupt"
 THROTTLED_MODEL = "temporary-rate-limit"
 CHAIN_MODEL = "failed-primary-then-fallback"
+UNKNOWN_FAILURE_MODEL = "unknown-terminal-native-failure"
 STOPPED_MODEL = "human-stop"
 QUESTION_MODEL = "pending-human-request"
 AMBIGUOUS_MODEL = "legacy-delivery-unknown"
@@ -55,9 +56,19 @@ def providers(model, token):
                     release.wait(30)
                     return
                 return super().chat(request, sequence)
-            if selected in (THROTTLED_MODEL, CHAIN_MODEL, *PROTECTED_MODELS):
+            if selected in (THROTTLED_MODEL, CHAIN_MODEL, UNKNOWN_FAILURE_MODEL, *PROTECTED_MODELS):
                 if selected != CHAIN_MODEL and throttle_cleared.is_set():
                     return super().chat(request, sequence)
+                if selected == UNKNOWN_FAILURE_MODEL:
+                    error = json.dumps({"error": {"type": "provider.future-error",
+                                                  "message": "Unknown terminal fixture failure"}}).encode()
+                    self.send_response(418)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(error)))
+                    self.send_header("x-should-retry", "false")
+                    self.end_headers()
+                    self.wfile.write(error)
+                    return
                 error = json.dumps({"error": {"type": "rate_limit_exceeded", "code": "rate_limit_exceeded",
                                               "message": "Temporary fixture throttle"}}).encode()
                 self.send_response(429)
@@ -152,6 +163,22 @@ def seed_throttled(endpoint, project, primary, model):
     return native_id, original
 
 
+def seed_unknown_terminal_failure(endpoint, project, primary):
+    native_id, original = seed(endpoint, project, UNKNOWN_FAILURE_MODEL)
+    wait_for("native OpenCode did not record the unknown terminal provider failure", lambda: (
+        any(m.get("type") == "idle" and m.get("outcome") == "failed"
+            for m in messages(endpoint, native_id))
+        and native_id not in call(endpoint, "/api/session/active")
+    ), seconds=15)
+    terminal = next(m for m in messages(endpoint, native_id)
+                    if m.get("type") == "idle" and m.get("outcome") == "failed")
+    require((terminal.get("error") or {}).get("type") not in ("provider.rate-limit", "provider.quota"),
+            f"fixture failure was normalized to a known class: {terminal}")
+    require(primary.received.count(UNKNOWN_FAILURE_MODEL) == 1,
+            "expected one initial unknown terminal failure per test chat")
+    return native_id, original
+
+
 def durable(database, native_id):
     with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as conn:
         return conn.execute(
@@ -220,7 +247,8 @@ def main():
     token = "fixture-" + secrets.token_hex(24)
     primary, reserve, interruptions, throttle_cleared = providers(module, token)
     with http_fixture(primary) as primary_url, http_fixture(reserve) as reserve_url:
-        primary_models = [*interruptions, THROTTLED_MODEL, CHAIN_MODEL, QUOTA_MODEL, *PROTECTED_MODELS]
+        primary_models = [*interruptions, THROTTLED_MODEL, CHAIN_MODEL, UNKNOWN_FAILURE_MODEL,
+                          QUOTA_MODEL, *PROTECTED_MODELS]
         private_write(project / "opencode.json", json.dumps({"autoupdate": False, "provider": {
             "fixture-primary": provider(primary_url, "fixture-primary-only", primary_models),
             FALLBACK_PROVIDER: provider(reserve_url, token, [FALLBACK_MODEL]),
@@ -280,12 +308,13 @@ def main():
             require(failures > 0, "no quota failure reached the primary provider")
             throttled, throttled_input = seed_throttled(endpoint, project, primary, THROTTLED_MODEL)
             chained, chained_input = seed_throttled(endpoint, project, primary, CHAIN_MODEL)
+            unknown_failed, unknown_input = seed_unknown_terminal_failure(endpoint, project, primary)
             protected = {model: seed_throttled(endpoint, project, primary, model)[0]
                          for model in PROTECTED_MODELS}
             protected[NATIVE_STOPPED_MODEL] = native_stopped
             original_history = {sid: messages(endpoint, sid) for sid in protected.values()}
             throttle_cleared.set()
-            sessions = (crashed, shutdown, exhausted, throttled, chained, *protected.values())
+            sessions = (crashed, shutdown, exhausted, throttled, chained, unknown_failed, *protected.values())
             with owner_client(args.core, profile, env) as provision:
                 registered = [session_tool(provision, action="register", instance_ref=INSTANCE,
                               native_session_id=native_id, request_key=f"register-{native_id}")
@@ -336,6 +365,10 @@ def main():
                                              module.ANSWER, "fixture-primary", SHUTDOWN_MODEL)
                 throttle_receipt = verified(active, endpoint, database, throttled, refs[throttled], throttled_input,
                                               module.ANSWER, "fixture-primary", THROTTLED_MODEL)
+                unknown_receipt = verified(active, endpoint, database, unknown_failed, refs[unknown_failed], unknown_input,
+                                           module.ANSWER, "fixture-primary", UNKNOWN_FAILURE_MODEL)
+                require(primary.received.count(UNKNOWN_FAILURE_MODEL) == 2,
+                        "unknown terminal failure was not retried exactly once on its saved route")
                 throttle_history = messages(endpoint, throttled)
                 require(not any(m.get("type") == "model-switched" for m in throttle_history),
                         "temporary 429 caused an OpenCode model selection")
@@ -396,6 +429,7 @@ def main():
             require(not durable(database, exhausted)
                     and primary.received.count(CRASH_MODEL) == 2 and primary.received.count(QUOTA_MODEL) == failures
                     and primary.received.count(THROTTLED_MODEL) == 2
+                    and primary.received.count(UNKNOWN_FAILURE_MODEL) == 2
                     and primary.received.count(SHUTDOWN_MODEL) == 2
                     and primary.received.count(CHAIN_MODEL) == 2
                     and reserve.count == 1 and reserve.received == [FALLBACK_MODEL], "model requests were repeated")
@@ -406,6 +440,7 @@ def main():
             print(json.dumps({"result": "verified", "opencode_sha256": digest(args.opencode),
                               "owner_sha256": digest(args.core), "crash_receipt": crashed_receipt,
                               "shutdown_receipt": shutdown_receipt,
+                              "unknown_terminal_receipt": unknown_receipt,
                               "same_model_429_receipt": throttle_receipt, "same_model_429_requests": 2,
                               "fallback_receipt": fallback_receipt, "fallback_requests": reserve.count,
                               "protected_continuations": {model: 0 for model in protected},

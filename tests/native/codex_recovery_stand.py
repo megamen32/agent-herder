@@ -776,12 +776,13 @@ def exercise_same_route_429(root, codex, owner, module, token, quota_profile):
         "version": 8, "enabled": True, "sessions": [], "recoverOnFailure": True,
     }))
     warm, cold, held = "warm-model", "cold-model", "human-stop-model"
-    ambiguous = "legacy-interruption-model"
+    observed = "legacy-interruption-model"
+    blocked = "preexisting-blocked-goal-model"
     cold_provider = "fixture-secondary-responses"
     cold_token = "fixture-secondary-" + secrets.token_hex(24)
     persistent = FALLBACK_MODEL if quota_profile else "persistent-model"
-    recoverable_models = (warm, cold, persistent)
-    requests = {model: [] for model in (*recoverable_models, held, ambiguous)}
+    recoverable_models = (warm, cold, persistent, blocked, observed)
+    requests = {model: [] for model in (*recoverable_models, held)}
     warm_requested = threading.Event()
     warm_may_fail = threading.Event()
 
@@ -829,6 +830,14 @@ experimental_bearer_token = "{cold_token}"
         def seed(call, wait, model):
             provider = provider_for(model)
             thread = call("thread/start", {"cwd": str(project), "model": model, "modelProvider": provider})["thread"]["id"]
+            if model == blocked:
+                goal = call("thread/goal/set", {"threadId": thread, "status": "blocked",
+                                                 "objective": "Independent existing fixture goal."})["goal"]
+                require(goal["status"] == "blocked", "fixture did not establish a pre-existing blocked goal")
+                # Codex timestamps have second precision. Distinguish this goal from a
+                # goal created and blocked by the failing composer turn itself.
+                wait_for("fixture goal timestamp did not advance",
+                         lambda: int(time.time()) > goal["createdAt"], seconds=3)
             turn = call("turn/start", {"threadId": thread, "turnTrigger": "composer", "input": [
                 {"type": "text", "text": "Reply with one word without using tools."},
             ]})["turn"]["id"]
@@ -849,6 +858,10 @@ experimental_bearer_token = "{cold_token}"
                 goal = call("thread/goal/get", {"threadId": thread})["goal"]
                 require(goal["status"] == "blocked" and goal["updatedAt"] == failed["completedAt"],
                         "the fake 429 did not block the goal during the composer turn")
+            if model == blocked:
+                goal = call("thread/goal/get", {"threadId": thread})["goal"]
+                require(goal["status"] == "blocked" and goal["createdAt"] < failed["startedAt"],
+                        "expected a blocked goal that predated the failed turn")
             print(json.dumps({"phase": "seeded", "provider": provider, "model": model,
                               "failure": message}), flush=True)
             return thread, turn
@@ -879,9 +892,6 @@ experimental_bearer_token = "{cold_token}"
             })
             require(not stop.get("isError") and stop["structuredContent"]["hold"] == "active",
                     "the owner did not record HumanStop for the fixture chat")
-            ambiguous_thread, ambiguous_turn = seed(read, wait_for_turn, ambiguous)
-            session_tool(provision, action="register", instance_ref=INSTANCE,
-                         native_session_id=ambiguous_thread, request_key="register-legacy-interruption")
 
         activation, stops, questions, choices, unfinished = (root / name for name in (
             "recovery-enabled.json", "human-stops.json", "human-requests.json", "choices.json",
@@ -892,7 +902,7 @@ experimental_bearer_token = "{cold_token}"
             "stop": {"id": "older-native-turn", "turnId": "older-native-turn", "reason": "interrupted",
                      "at": "2000-01-01T00:00:00Z"},
         }, {
-            "harness": "codex", "id": ambiguous_thread, "active": True,
+            "harness": "codex", "id": sessions[observed][0], "active": True,
             "stop": {"id": "unattributed", "reason": "unrecognized"},
         }]}))
         stops_hash = digest(stops)
@@ -902,14 +912,13 @@ experimental_bearer_token = "{cold_token}"
         data["owner"]["codex_recovery"] = {
             "autopilot_state_dir": str(root),
             "legacy_handoff": {
-                "native_sessions": [session[0] for session in sessions.values()] + [held_thread, ambiguous_thread],
+                "native_sessions": [session[0] for session in sessions.values()] + [held_thread],
                 "activation_file": str(activation), "human_stops": str(stops), "human_requests": str(questions),
                 "choices": str(choices), "unfinished_sessions": str(unfinished),
             },
         }
         protected = {
             "human_stop": (held, held_thread, held_turn, "human_stop_active"),
-            "unknown_stop_provenance": (ambiguous, ambiguous_thread, ambiguous_turn, "legacy_stop_provenance_unknown"),
         }
 
         def check_holds(client):
@@ -1025,8 +1034,15 @@ experimental_bearer_token = "{cold_token}"
             "secondary_route": {"thread": sessions[cold][0], "failed_turn": sessions[cold][1],
                                 "recovery_turn": turns(read, sessions[cold][0])[1]["id"],
                                 "provider": cold_provider, "model": cold},
+            "preexisting_goal": {
+                "status_after_recovery": read("thread/goal/get", {"threadId": sessions[blocked][0]})["goal"]["status"],
+                "thread": sessions[blocked][0], "failed_turn": sessions[blocked][1],
+                "recovery_turn": turns(read, sessions[blocked][0])[1]["id"], "model": blocked,
+            },
             "owner_restart_repeat": 0,
         }
+        require(proof["preexisting_goal"]["status_after_recovery"] == "blocked",
+                "technical recovery rearmed the goal")
         proof.update({case: {"thread": thread, "failed_turn": turn, "reason": reason, "recovery_requests": 0}
                       for case, (_, thread, turn, reason) in protected.items()})
         proof["independent_followup"] = verify_independent_followup(
