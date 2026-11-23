@@ -577,10 +577,6 @@ fn derive_observation(
             || Some(idle_at) != session.time.idle
             || assistant["type"] != "assistant"
             || assistant["finish"] != "error"
-            || !assistant["content"].as_array()?.is_empty()
-            || !assistant["snapshot"].is_null()
-            || !assistant["time"]["firstToken"].is_null()
-            || !assistant["time"]["streamed"].is_null()
             || !source.matches(&read_model(&assistant["model"])?)
             || !recovery_input(input, &session.id)
             || valid_frame_time(input)? < busy
@@ -592,21 +588,18 @@ fn derive_observation(
         }
         let error = &assistant["error"];
         let terminal_error = &idle["error"];
-        let failure = typed_failure(error)?;
-        if error["type"] != terminal_error["type"]
-            || error["status"] != terminal_error["status"]
-            || typed_failure(terminal_error)? != failure
+        if !error.is_object() || !terminal_error.is_object() || error.is_null()
+            || error != terminal_error
         {
             return None;
         }
+        let failure = typed_failure(error)?;
         if error["type"] == "provider.rate-limit" {
             let retry_after = error.get("retryAfterMs");
-            if retry_after != terminal_error.get("retryAfterMs") {
-                return None;
-            }
             if let Some(delay) = retry_after {
+                let delay = delay.as_u64()?;
                 // The terminal idle timestamp records the failure.
-                let retry_at = idle_at.checked_add(delay.as_u64()?)?;
+                let retry_at = idle_at.checked_add(delay)?;
                 let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
                 if now < Duration::from_millis(retry_at) {
                     return None;
@@ -686,11 +679,28 @@ fn recovery_input(row: &Value, sid: &str) -> bool {
 }
 
 fn typed_failure(error: &Value) -> Option<RecoveryFailure> {
-    match (error["type"].as_str()?, error["status"].as_u64()) {
+    if !error.is_object() || error.as_object()?.is_empty() { return None; }
+    let kind = match error.get("type") {
+        None => "",
+        Some(value) => {
+            let kind = value.as_str()?.trim();
+            if kind.is_empty() { return None; }
+            kind
+        }
+    };
+    match (kind, error["status"].as_u64()) {
         ("provider.quota", Some(402 | 429)) => Some(RecoveryFailure::Quota),
         ("provider.internal" | "provider.error" | "system.error", Some(500..=599))
         | ("provider.timeout", Some(408 | 504))
         | ("provider.rate-limit", Some(429)) => Some(RecoveryFailure::Retryable),
+        // Error type is optional in the pinned protocol. This function is
+        // called only after matching native terminal failed frames were proved.
+        ("", _) if error.get("type").is_none() => Some(RecoveryFailure::Retryable),
+        // Preserve forward compatibility for future nonempty provider error
+        // types, while malformed known types/statuses remain fail-closed.
+        (other, _) if !other.is_empty()
+            && !matches!(other, "provider.quota" | "provider.rate-limit" | "provider.internal" | "provider.error" | "system.error" | "provider.timeout") => Some(RecoveryFailure::Retryable),
+        ("provider.rate-limit", Some(100..=599)) => Some(RecoveryFailure::Retryable),
         _ => None,
     }
 }
@@ -952,10 +962,70 @@ mod tests {
         assert_eq!(observed.boundary.provider, "fixture");
         assert_eq!(observed.boundary.model.as_deref(), Some("main"));
 
-        for status in [json!(503), json!("429"), Value::Null] {
+        for status in [json!("429"), Value::Null] {
             let error = json!({"type":"provider.rate-limit","status":status});
             assert!(observe(&failed_history(error)).is_none());
         }
+        let ordinary_status = json!({"type":"provider.rate-limit","status":503});
+        assert_eq!(observe(&failed_history(ordinary_status)).unwrap().boundary.failure,
+                   RecoveryFailure::Retryable);
+        let other_http = json!({"type":"provider.rate-limit","status":418});
+        assert_eq!(observe(&failed_history(other_http)).unwrap().boundary.failure, RecoveryFailure::Retryable);
+    }
+
+    #[test]
+    fn unknown_but_native_terminal_failures_are_retryable_once_on_the_saved_route() {
+        for error in [
+            json!({"type":"provider.future-error","message":"native terminal failure"}),
+            json!({"message":"native terminal failure without a normalized type"}),
+        ] {
+            let observed = derive_observation(
+                session(Some(1040), Some("failed")),
+                &failed_history(error),
+                None,
+            ).expect("paired unknown native terminal failure");
+            assert_eq!(observed.boundary.failure, RecoveryFailure::Retryable);
+            assert_eq!(observed.boundary.provider, "fixture");
+            assert_eq!(observed.boundary.model.as_deref(), Some("main"));
+        }
+        for error in [json!({}), Value::Null] {
+            assert!(derive_observation(session(Some(1040), Some("failed")), &failed_history(error), None).is_none());
+        }
+    }
+
+    #[test]
+    fn partial_native_answer_with_normalized_timing_and_snapshot_is_recoverable() {
+        let error = json!({"message":"provider disconnected after streaming"});
+        let mut history = failed_history(error);
+        history[1]["content"] = json!([
+            {"type":"text","text":"partial answer"},
+            {"type":"reasoning","text":"partial reasoning"}
+        ]);
+        history[1]["time"] = json!({"created":1020,"firstToken":1025,"streamed":12,"completed":1035});
+        history[1]["snapshot"] = json!("opaque-snapshot-ref");
+        let observed = derive_observation(
+            session(Some(1040), Some("failed")), &history, None,
+        ).expect("terminal error after a partial response");
+        assert_eq!(observed.boundary.failure, RecoveryFailure::Retryable);
+        assert_eq!(observed.boundary.input_item_id, "msg_User");
+
+        for (path, value) in [
+            ("finish", json!("stop")),
+            ("content", json!([{"type":"text","text":"completed answer"}])),
+        ] {
+            let mut completed = history.clone();
+            if path == "content" {
+                completed[1]["finish"] = json!("stop");
+            } else {
+                completed[1][path] = value;
+            }
+            assert!(derive_observation(session(Some(1040), Some("failed")), &completed, None).is_none());
+        }
+
+        assert!(derive_observation(session(Some(1040), Some("interrupted")), &history, None).is_none());
+        let mut malformed = history;
+        malformed[0]["error"] = json!({"message":"different terminal event"});
+        assert!(derive_observation(session(Some(1040), Some("failed")), &malformed, None).is_none());
     }
 
     #[test]
@@ -972,6 +1042,7 @@ mod tests {
         assert!(observe(&recent).is_some());
         recent[0]["error"]["retryAfterMs"] = json!(0);
         assert!(observe(&recent).is_none());
+        assert!(observe(&history(json!("malformed"))).is_none());
 
         let future_delay = u64::MAX - 1040;
         for delay in [

@@ -759,7 +759,8 @@ def observe_completion(state, gate):
         restart_path, consumer_path = root / "restart-ack.json", root / "consumer-receipt.json"
         scheduler_path = root / "scheduler-consumer.json"
         if restart_path.exists():
-            restart = candidate.read_json(restart_path)
+            restart_bytes = candidate.private_file(restart_path).read_bytes()
+            restart = json.loads(restart_bytes)
             validate_restart(state, restart)
             if state["phase"] == "awaiting_restart":
                 save_state(state, phase="awaiting_consumer", restart_operation_id=restart["provider_operation_id"])
@@ -773,6 +774,13 @@ def observe_completion(state, gate):
             if (candidate.digest(state["selector"]) != state["selector_after_sha256"]
                     or candidate.digest(state["launcher"]) != state["launcher_after_sha256"]):
                 raise RuntimeError("installed configuration changed while waiting for readiness")
+            capture = {"restart_receipt_sha256": hashlib.sha256(restart_bytes).hexdigest(),
+                       "runtime_pair": pair}
+            if "restart_runtime_capture" not in state:
+                gate.check()
+                save_state(state, restart_runtime_capture=capture)
+            elif state["restart_runtime_capture"] != capture:
+                raise RuntimeError("restart receipt or runtime changed after the first verified observation")
             if consumer_path.exists():
                 receipt = candidate.read_json(consumer_path)
                 consumer = validate_consumer(state, receipt, restart["observed_at_unix_ms"])

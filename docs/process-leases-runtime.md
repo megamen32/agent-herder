@@ -371,6 +371,22 @@ python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-rollout.py" recover \
   --scheduler-proof "<fresh private paired TS receipt>"
 ~~~
 
+The coordinator pins the first verified post-ACK native pair in
+`state.json.restart_runtime_capture` while the release guard is held. It records
+the exact restart ACK digest and the pair before waiting on either consumer.
+A later scheduler failure leaves the capture in the UNKNOWN checkpoint.
+
+For canonical reconciliation, the normal
+`process-leases-reconcile.py prepare --native-restart-binding ...` accepts a
+`herder-native-receipt-source-binding` with `runtime_capture_sha256` set to
+`process-leases-rollout.py`'s `json_hash` of that checkpoint field. The audit
+still pins the original typed restart result and original typed child status.
+Pass the pinned provider parser for a full provider task envelope. A retained
+typed projection with `operation` and `reply` is also supported. The capture supplies the historical OS identity. If the
+pair changed, also supply the positively verified typed status of the successor
+and the pinned parser. Apply still requires fresh native and scheduler consumer
+receipts. Older jobs without a capture use the existing historical audit path.
+
 For the legacy ledger, recover can settle durable occupancy after those observations under a new held release guard. It changes no selector and performs no restart. A mixed or unrelated configuration is refused.
 
 For a canonical UNKNOWN execution binding, recover records the evidence and

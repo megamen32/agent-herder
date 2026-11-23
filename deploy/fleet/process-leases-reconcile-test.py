@@ -169,10 +169,44 @@ class Contracts(unittest.TestCase):
     def test_changed_native_pair_cannot_use_original_receipt_without_controller_evidence(self):
         original={'compat':{'pid':201},'core':{'pid':202}}
         current={'compat':{'pid':301},'core':{'pid':302}}
-        with patch.object(r,'read_pin',return_value={'runtime_pair':original}),patch.object(r,'native_restart_binding'):
+        with patch.object(r,'native_restart_binding',return_value={'runtime_pair':original}):
             self.assertEqual(r.native_provenance(self.state,original,{}),(original,None))
             with self.assertRaisesRegex(ValueError,'positive typed successor'):
                 r.native_provenance(self.state,current,{})
+
+    def test_audit_can_use_the_checkpoint_pinned_restart_pair(self):
+        self.state["awaiting_restart_at_unix_ms"] = 100
+        ack = {"schema": 1, "kind": "restart", "job_id": self.state["job_id"],
+               "challenge": self.state["challenge"], "observed_at_unix_ms": 200,
+               "method": "mcp_manage", "action": "restart",
+               "provider_operation_id": "provider-original-restart",
+               "target": r.rollout.CONTROLLER, "ref": r.rollout.CHILD,
+               "compat_pid": 201, "core_pid": 202}
+        pair = {"compat": {"pid": 201}, "core": {"pid": 202}}
+        self.state["restart_operation_id"] = ack["provider_operation_id"]
+        ack_pin = r.publish(self.job / "restart-ack.json", ack)
+        capture = {"restart_receipt_sha256": ack_pin["sha256"], "runtime_pair": pair}
+        self.state["restart_runtime_capture"] = capture
+        provider = r.publish(self.output / "provider.json", {
+            "operation": ack["provider_operation_id"], "reply": {"ref": r.rollout.CHILD, "action": "restart"}})
+        child = r.publish(self.output / "child.json", {
+            "ref": r.rollout.CHILD, "status": {"ref": r.rollout.CHILD, "running": True, "pid": 201}})
+        binding = {"version": 1, "kind": "herder-native-receipt-source-binding",
+                   "provider_operation_id": ack["provider_operation_id"], "receipt": ack_pin,
+                   "state": {"path": str(self.job / "state.json")}, "provider_result": provider,
+                   "child_status": child, "runtime_capture_sha256": r.rollout.json_hash(capture),
+                   "native_calls": 0, "service_calls": 0, "selector_changes": 0}
+        binding_pin = r.publish(self.output / "binding.json", binding)
+        self.assertEqual(r.native_provenance(self.state, pair, binding_pin), (pair, None))
+        wrong_provider = r.publish(self.output / "wrong-provider.json", {
+            "operation": "another-operation", "reply": {"ref": r.rollout.CHILD, "action": "restart"}})
+        wrong_binding = r.publish(self.output / "wrong-provider-binding.json",
+                                  {**binding, "provider_result": wrong_provider})
+        with self.assertRaisesRegex(ValueError, "exact typed restart"):
+            r.native_provenance(self.state, pair, wrong_binding)
+        self.state["restart_runtime_capture"] = {**capture, "restart_receipt_sha256": "f" * 64}
+        with self.assertRaisesRegex(ValueError, "capture"):
+            r.native_provenance(self.state, pair, binding_pin)
 
     def test_controller_receipt_cannot_be_borrowed_by_later_pid_reuse(self):
         # The real running test process must not be accepted by an older receipt.

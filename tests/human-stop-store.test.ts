@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -192,6 +192,108 @@ describe("HumanStopStore", () => {
       turnId: "turn-new",
     });
     expect(await store.isHeld("codex", target.id)).toBe(true);
+  });
+
+  it("preserves an active explicit stop against an observed interruption and technical hold", async () => {
+    const { path, store } = await fixtureStore();
+    const target = { harness: "codex", id: "explicit-survives-observation" };
+    const explicit = { id: "explicit-stop:stop-1", at: "2026-11-23T10:00:00.000Z", reason: "explicit-stop" };
+    await store.hold(target, explicit);
+    await store.observe({ ...target, status: "stopped", lastActivity: "2026-11-23T10:01:00.000Z",
+      meta: { automationStop: { id: "transport-interrupted", at: "2026-11-23T10:01:00.000Z", reason: "transport interrupted" } } } as never);
+    await store.hold(target, { id: "technical-hold", at: "2026-11-23T10:02:00.000Z", reason: "non-owner evidence" });
+
+    const file = JSON.parse(await readFile(path, "utf8")) as { sessions: Array<{ active: boolean; stop: { id: string }; ignoredStopIds: string[] }> };
+    expect(file.sessions[0]).toMatchObject({ active: true, stop: { id: explicit.id }, ignoredStopIds: [] });
+  });
+
+  it("records every explicit stop released by a newer user prompt and permits later technical failure", async () => {
+    const { path, store } = await fixtureStore();
+    const target = { harness: "codex", id: "multiple-explicit-stops" };
+    const first = { id: "explicit-stop:first", at: "2026-11-23T10:00:00.000Z", reason: "explicit-stop" };
+    const second = { id: "explicit-stop:second", at: "2026-11-23T10:01:00.000Z", reason: "explicit-stop" };
+    await store.hold(target, first);
+    await store.hold(target, second);
+    await store.release("codex", target.id, { id: "user-prompt", at: "2026-11-23T10:02:00.000Z", origin: "real_user" });
+    await store.hold(target, { id: "later-transport-failure", at: "2026-11-23T10:03:00.000Z", reason: "transport interrupted" });
+    await expect(store.observe({ ...target, status: "stopped", lastActivity: first.at,
+      meta: { automationStop: first } } as never)).resolves.toBe(true);
+
+    const file = JSON.parse(await readFile(path, "utf8")) as { sessions: Array<{
+      active: boolean; stop: { id: string }; ignoredStopIds: string[]; releasedOwnerStopIds?: string[];
+    }> };
+    expect(file.sessions[0]).toMatchObject({ active: true, stop: { id: "later-transport-failure" },
+      releasedOwnerStopIds: [first.id, second.id] });
+    expect(file.sessions[0]?.ignoredStopIds).toEqual(expect.arrayContaining([first.id, second.id]));
+  });
+
+  it("releases exact owner-scope stop and keeps legacy records readable", async () => {
+    const { path, store } = await fixtureStore();
+    await store.hold({ harness: "codex", id: "scope-stop" }, {
+      id: "owner-scope-stop:codex:scope-stop", at: "2026-11-23T10:00:00.000Z", reason: "owner scope stop",
+    });
+    await store.hold({ harness: "codex", id: "scope-stop" }, {
+      id: "technical-during-scope", at: "2026-11-23T10:00:30.000Z", reason: "non-owner evidence",
+    });
+    const active = JSON.parse(await readFile(path, "utf8")) as { sessions: Array<{ stop: { id: string }; active: boolean }> };
+    expect(active.sessions[0]).toMatchObject({ active: true, stop: { id: "owner-scope-stop:codex:scope-stop" } });
+    await expect(store.release("codex", "scope-stop")).resolves.toBe(true);
+    await expect(store.hold({ harness: "codex", id: "scope-stop" }, {
+      id: "technical-after-scope", at: "2026-11-23T10:01:00.000Z", reason: "transport interrupted",
+    })).resolves.toBeUndefined();
+    const file = JSON.parse(await readFile(path, "utf8")) as { sessions: Array<{ releasedOwnerStopIds?: string[] }> };
+    expect(file.sessions[0]?.releasedOwnerStopIds).toEqual(["owner-scope-stop:codex:scope-stop"]);
+
+    await store.hold({ harness: "codex", id: "scope-stop" }, {
+      id: "owner-scope-stop:codex:scope-stop", at: "2026-11-23T10:02:00.000Z", reason: "owner scope stop",
+    });
+    const reinstalled = JSON.parse(await readFile(path, "utf8")) as { sessions: Array<{ active: boolean; stop: { id: string } }> };
+    expect(reinstalled.sessions[0]).toMatchObject({ active: true, stop: { id: "owner-scope-stop:codex:scope-stop" } });
+
+    await store.release("codex", "scope-stop");
+    await store.hold({ harness: "codex", id: "scope-stop" }, {
+      id: "owner-scope-stop:codex:foreign-session", at: "2026-11-23T10:03:00.000Z", reason: "owner scope stop",
+    });
+    await store.hold({ harness: "codex", id: "scope-stop" }, {
+      id: "owner-scope-stop:codex:", at: "2026-11-23T10:04:00.000Z", reason: "owner scope stop",
+    });
+    expect(await store.isHeld("codex", "scope-stop")).toBe(false);
+
+    await writeFile(path, JSON.stringify({ version: 1, sessions: [{ harness: "codex", id: "legacy", active: true,
+      stop: { id: "legacy-stop", at: "2026-11-23T10:00:00.000Z", reason: "interrupted" }, ignoredStopIds: [] }] }));
+    expect(await store.isHeld("codex", "legacy")).toBe(true);
+  });
+
+  it("backfills released explicit IDs only from a legacy inactive cleared snapshot", async () => {
+    const { path, store } = await fixtureStore();
+    await writeFile(path, JSON.stringify({ version: 1, sessions: [{ harness: "codex", id: "legacy-cleared",
+      active: false, stop: { id: "transport-stop", at: "2026-11-23T10:00:00.000Z", reason: "transport interrupted" },
+      ignoredStopIds: ["explicit-stop:legacy-a", "explicit-stop:", "owner-scope-stop:codex:legacy-cleared"],
+      clearedAt: "2026-11-23T10:02:00.000Z", clearedBy: "explicit-resume" }] }));
+    await store.hold({ harness: "codex", id: "legacy-cleared" }, {
+      id: "later-transport-stop", at: "2026-11-23T10:03:00.000Z", reason: "transport interrupted",
+    });
+    const file = JSON.parse(await readFile(path, "utf8")) as { sessions: Array<{ releasedOwnerStopIds?: string[] }> };
+    expect(file.sessions[0]?.releasedOwnerStopIds).toEqual(["explicit-stop:legacy-a", "owner-scope-stop:codex:legacy-cleared"]);
+
+    await writeFile(path, JSON.stringify({ version: 1, sessions: [{ harness: "codex", id: "legacy-active",
+      active: true, stop: { id: "explicit-stop:possibly-newer", at: "2026-11-23T10:04:00.000Z", reason: "explicit-stop" },
+      ignoredStopIds: ["explicit-stop:old"], clearedAt: "2026-11-23T10:03:00.000Z" }] }));
+    expect(await store.isHeld("codex", "legacy-active")).toBe(true);
+    const active = JSON.parse(await readFile(path, "utf8")) as { sessions: Array<{ releasedOwnerStopIds?: string[] }> };
+    expect(active.sessions[0]?.releasedOwnerStopIds).toBeUndefined();
+  });
+
+  it("records explicit-resume as release evidence for the exact explicit stop ID", async () => {
+    const { path, store } = await fixtureStore();
+    const target = { harness: "codex", id: "explicit-resume-release" };
+    const stop = { id: "explicit-stop:resume-me", at: "2026-11-23T10:00:00.000Z", reason: "explicit-stop" };
+    await store.hold(target, stop);
+    await expect(store.release("codex", target.id)).resolves.toBe(true);
+    const file = JSON.parse(await readFile(path, "utf8")) as { sessions: Array<{
+      active: boolean; clearedBy?: string; releasedOwnerStopIds?: string[];
+    }> };
+    expect(file.sessions[0]).toMatchObject({ active: false, clearedBy: "explicit-resume", releasedOwnerStopIds: [stop.id] });
   });
 
   it("keeps the newest named-session context while observing a repeated stop event", async () => {

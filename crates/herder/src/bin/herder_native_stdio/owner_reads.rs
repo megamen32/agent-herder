@@ -529,8 +529,9 @@ fn read_store(policy: &OwnerPolicy) -> ReadResult<Connection> {
         || dm.uid() != gm.uid()
         || dm.mode() & 0o077 != 0
         || gm.mode() & 0o077 != 0
-        || policy.db.canonicalize().ok().as_deref() != Some(policy.db.as_path())
-        || policy.gate.canonicalize().ok().as_deref() != Some(policy.gate.as_path())
+        || !policy.db.is_absolute()
+        || !policy.gate.is_absolute()
+        || policy.db.parent() != policy.gate.parent()
     {
         return Err("scope_unavailable");
     }
@@ -1150,6 +1151,21 @@ mod tests {
     }
     fn never(_: &str, _: Value) -> Result<Value, ReadError> {
         panic!("native read before authorization")
+    }
+
+    #[test]
+    fn context_accepts_protected_authority_directory_alias() {
+        let mut f = Fixture::new();
+        f.own();
+        let alias = f.root.join("authority-alias");
+        std::os::unix::fs::symlink(&f.root, &alias).unwrap();
+        f.policy.db = alias.join("state.db");
+        f.policy.gate = alias.join("gate");
+        let request = catalog::Request::Session(catalog::Session::Context {
+            session_ref: Some("owned".into()),
+        });
+        let result = payload(f.invoke(request, never));
+        assert_eq!(result["session_ref"], "owned", "{result}");
     }
 
     #[test]

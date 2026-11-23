@@ -245,6 +245,23 @@ class CoordinatorContracts(unittest.TestCase):
         self.assertNotIn("finished", self.events)
         self.assertEqual(rollout.read_state(self.args.job_dir)["phase"], "unknown")
 
+    def test_first_verified_ack_pair_survives_scheduler_failure(self):
+        original_pair = self.runtime_pair(self.args.selector, self.args.launcher, 201, 202)
+        def reject_scheduler(state, receipt, minimum):
+            saved = rollout.read_state(self.args.job_dir)
+            self.assertEqual(saved["restart_runtime_capture"]["runtime_pair"], original_pair)
+            raise ValueError("scheduler proof failed")
+        with patch.object(rollout.time, "sleep", side_effect=lambda _: self.publish_receipts()), \
+                patch.object(rollout, "validate_scheduler_consumer", side_effect=reject_scheduler):
+            with self.assertRaisesRegex(ValueError, "scheduler proof failed"):
+                rollout.run(self.args)
+        state = rollout.read_state(self.args.job_dir)
+        self.assertEqual(state["phase"], "unknown")
+        self.assertEqual(state["restart_runtime_capture"]["runtime_pair"], original_pair)
+        self.assertEqual(state["restart_runtime_capture"]["restart_receipt_sha256"],
+                         candidate.digest(self.args.job_dir / "restart-ack.json"))
+        self.assertEqual(rollout.read_occupancy(self.fixture.selector)["phase"], "active")
+
     def test_old_schema_names_do_not_prove_new_core_ready(self):
         with patch.object(rollout.time, "sleep", side_effect=lambda _: self.publish_receipts(process=False)):
             with self.assertRaisesRegex(ValueError, "lacks process_completion"):
