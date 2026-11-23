@@ -483,6 +483,26 @@ class ComponentAncestry(unittest.TestCase):
             with self.subTest(migration=migration), self.assertRaisesRegex(ValueError, "changes installed scheduler inputs"):
                 rollout.scheduler_source(git_dir, self.after, migration, receipt)
 
+    def test_browser_only_profile_migration_can_keep_an_unchanged_scheduler(self):
+        receipt = {"response": {"runtime": {"source_commit": self.new}}}
+        browser = {"schema": 2, "type": "herder-native-profile-rebind", "kinds": ["chatgpt", "zai"]}
+        for name in (".github/workflows/fleet-session.yml", "integrations/chrome/agent-herder/background.js",
+                     "deploy/fleet/launch-v1-core.py"):
+            path = self.repo / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("Browser owner transport change\n")
+        self.git(["add", "."])
+        self.git(["commit", "-qm", "browser transport and deployment"])
+        native_source = self.git(["rev-parse", "HEAD"])
+        self.after["process_leases_build"]["source_commit"] = native_source
+        git_dir = self.repo / ".git"
+        self.assertEqual(rollout.scheduler_source(git_dir, self.after, browser, receipt), self.new)
+        mixed = {**browser, "kinds": ["chatgpt", "opencode"]}
+        self.assertEqual(rollout.scheduler_source(git_dir, self.after, mixed, receipt), native_source)
+        self.after["process_leases_build"]["source_commit"] = self.commit("changed scheduler input")
+        with self.assertRaisesRegex(ValueError, "changes installed scheduler inputs"):
+            rollout.scheduler_source(git_dir, self.after, browser, receipt)
+
     def test_new_unmerged_core_is_refused(self):
         unmerged = self.commit("unmerged")
         self.after["process_leases_build"]["source_commit"] = unmerged
