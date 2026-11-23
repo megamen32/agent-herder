@@ -393,7 +393,7 @@ fn select_route(
         provider: boundary.provider.clone(),
         model: boundary.model.clone(),
     };
-    let alternate = || {
+    let find_alternate = || {
         profile.fallback_routes.iter().find_map(|route| {
             let candidate = RecoveryRoute {
                 provider: route.provider.clone(),
@@ -414,8 +414,16 @@ fn select_route(
             .then_some(candidate)
         })
     };
+    let alternate = find_alternate();
     if stage == RecoveryStage::Fallback {
-        return Some(alternate().unwrap_or(saved));
+        if alternate.is_none()
+            && native.same_route_retry(target, boundary) == SameRouteRetry::Hold
+        {
+            // Browser adapters expose no provider-switch capability and hold
+            // their own retry policy. Do not synthesize a fallback delivery.
+            return None;
+        }
+        return Some(alternate.unwrap_or(saved));
     }
 
     let from_quota_failure = boundary.failure == RecoveryFailure::Quota;
@@ -435,7 +443,7 @@ fn select_route(
         // A known exhausted primary route skips an unusable same-route probe
         // and uses a permitted alternate immediately. If none exists, the
         // caller keeps the boundary pending until a later quota check passes.
-        return alternate();
+        return alternate;
     }
     let allowed = if from_quota_failure {
         // An unknown quota is one permitted probe. A known exhausted quota
