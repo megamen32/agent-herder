@@ -1140,7 +1140,8 @@ for line in sys.stdin:
     let unfinished = f.root.join("unfinished-sessions.json");
     let write_stops = |interrupt_active: bool| {
         let mut rows = vec![
-            json!({"harness":"codex","id":"held-new","active":true}),
+            json!({"harness":"codex","id":"held-new","active":true,
+                "stop":{"id":"explicit-stop:held-new","reason":"explicit-stop"}}),
             json!({"harness":"codex","id":"explicit-legacy","active":true,"ignoredStopIds":[],
                 "stop":{"id":"explicit-stop:fixture","reason":"explicit-stop","turnId":"stopped-explicit-legacy",
                         "at":"2000-01-01T00:00:00Z"}}),
@@ -1372,7 +1373,7 @@ for line in sys.stdin:
         let params: Value = serde_json::from_str(attach.trim()).unwrap();
         assert_eq!(params["threadId"], target);
         assert!(params.get("modelProvider").is_none(), "{params}");
-        assert!(params.get("model").is_none(), "{params}");
+        assert_eq!(params["model"], "gpt-fixture", "{params}");
     }
     for target in ["disabled", "held", "explicit-legacy", "unknown-quota", "pending-question", "legacy-uncertain",
         "outside-cohort"] {
@@ -1973,6 +1974,82 @@ fn safe_vibe_env() -> serde_json::Value {
         "AGENT_HERDER_VIBE_MAC_NODE_PATH":"/tmp/fixture-node",
         "AGENT_HERDER_VIBE_MAC_CLI_PATH":"/tmp/fixture-vibe-cli"
     })
+}
+
+#[test]
+fn new_browser_authority_does_not_require_a_legacy_migration_snapshot() {
+    use herder::application::scoped_stop::migration_quarantine::digest;
+    use serde_json::{Value, json};
+    use std::io::{BufRead, BufReader, Write};
+
+    let legacy = Fixture::new();
+    let added = Fixture::new();
+    let binary = std::env::var_os("HERDER_V1_CANDIDATE_BINARY")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_herder_native_stdio")));
+    let source = legacy.root.join("sealed-legacy-records.json");
+    let source_hash = "a".repeat(64);
+    let inventory = digest(format!("{}\0{}\n", source.display(), source_hash).as_bytes());
+    let snapshot = json!({
+        "version":1, "kind":"herder-legacy-quarantine", "epoch":"migration-fixture",
+        "authority_generation":"generation", "node_ref":"node", "instance_ref":"zai-existing",
+        "writer_drain_sha256":"b".repeat(64), "inventory_sha256":inventory,
+        "sources":[{"path":source,"sha256":source_hash}],
+        "records":[{
+            "record_ref":"legacy-job", "source_path":source, "source_sha256":source_hash,
+            "record_sha256":"c".repeat(64), "request_keys":["old-delivery"], "outcome":"unknown",
+            "holds":[{"node_ref":"node","instance_ref":"zai-existing","native_session_id":"old-chat"}]
+        }]
+    });
+    legacy.migrate_v4();
+    added.migrate_v4();
+    Writer::open_file(&legacy.db).unwrap()
+        .put_setting_once("migration:legacy", "quarantine:v1", &snapshot.to_string(), "fixture")
+        .unwrap();
+    for (fixture, instance) in [(&legacy, "zai-existing"), (&added, "zai-added")] {
+        let profile = json!({"database":fixture.db,"gate":fixture.gate,"generation":"generation","owner":{
+            "kind":"zai","node":"node","instance":instance,"principal":"owner",
+            "executable":binary,"cwd":fixture.root,"code_home":fixture.root,
+            "ahap_env":{"AHAP_BROWSER_TRANSPORT":"direct-cdp",
+                "AHAP_BROWSER_CDP_WS_URL":"ws://127.0.0.1:9222/devtools/browser/migration-fixture",
+                "AHAP_BROWSER_CDP_CONTEXT_ID":"fixture-context",
+                "AHAP_BROWSER_CDP_TARGET_ID":instance,
+                "AHAP_BROWSER_ACCOUNT_SCOPE":"a".repeat(64)}
+        }});
+        fs::write(&fixture.profile, profile.to_string()).unwrap();
+    }
+    let mut child = Command::new(&binary)
+        .arg("--trusted-owner-profile").arg(&legacy.profile)
+        .arg("--trusted-owner-profile").arg(&added.profile)
+        .env("AGENT_HERDER_MIGRATION_EPOCH","migration-fixture")
+        .env("AGENT_HERDER_MIGRATION_NEW_AUTHORITIES",r#"[["node","zai-added","generation"]]"#)
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+    let mut input = child.stdin.take().unwrap();
+    let mut output = BufReader::new(child.stdout.take().unwrap());
+    let mut wait = |id, native| {
+        writeln!(input, "{}", json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{
+            "_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28",
+                "io.modelcontextprotocol/clientCapabilities":{},
+                "io.modelcontextprotocol/clientInfo":{"name":"browser-migration-fixture","version":"1"}},
+            "name":"automation","arguments":{"action":"wait_status","harness":"zai","node_ref":"node","native_session_id":native}
+        }})).unwrap();
+        input.flush().unwrap();
+        let mut line = String::new();
+        output.read_line(&mut line).unwrap();
+        let reply: Value = serde_json::from_str(&line).unwrap();
+        assert!(reply["result"]["structuredContent"].is_object(), "{reply}");
+        reply["result"]["structuredContent"].clone()
+    };
+    let current = wait(1, "herder-migration-readiness:migration-fixture");
+    let hold = wait(2, "old-chat");
+    drop(input);
+    child.wait().unwrap();
+    assert_eq!(current["complete"], true, "{current}");
+    let proofs = current["migration_authorities"].as_array().unwrap();
+    assert_eq!(proofs.len(), 1);
+    assert_eq!(proofs[0]["instance_ref"], "zai-existing");
+    assert_eq!(proofs[0]["required_epoch"], "migration-fixture");
+    assert_eq!(hold["reason"], "legacy_target_quarantined", "{hold}");
 }
 
 #[test]

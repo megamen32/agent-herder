@@ -171,7 +171,11 @@ impl ServerHandler for MultiOwner {
                     {return Ok(denied("process_wait_unavailable"))}
                 observed=value.get("observedAt").cloned();
                 let Some(proof)=value.get("migration") else{return Ok(denied("legacy_migration_unavailable"))};
-                migration_authorities.push(proof.clone());
+                if proof.get("configured") == Some(&Value::Bool(true)) {
+                    migration_authorities.push(proof.clone());
+                } else if proof.get("configured") != Some(&Value::Bool(false)) || proof.get("required_epoch") != Some(&Value::Null) {
+                    return Ok(denied("legacy_migration_unavailable"));
+                }
                 if value.get("mapped")==Some(&Value::Bool(true)){mapped.push(value)}
                 else if value.get("blocked")==Some(&Value::Bool(true)){blocking_unmapped=Some(value)}
             }
