@@ -12,7 +12,7 @@ use crate::{
 use rmcp::model::CallToolResult;
 use rusqlite::{Connection, TransactionBehavior, params};
 use serde_json::json;
-use std::borrow::Cow;
+use std::{borrow::Cow, cmp::Ordering};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum RecoveryStage {
@@ -36,20 +36,23 @@ pub(super) struct RecoveryAttempt {
     pub claimed: bool,
 }
 
-fn parse_suffix(suffix: &str) -> Option<(&str, RecoveryStage, u32)> {
+fn parse_suffix(suffix: &str) -> Option<(&str, RecoveryStage, String)> {
     let (digest, stage) = suffix.split_once(':')?;
     if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return None;
     }
     let (stage, retry) = match stage.split_once(':') {
         Some((stage, value)) => {
-            let retry: u32 = value.parse().ok()?;
-            if retry == 0 || retry.to_string() != value {
+            if value.is_empty()
+                || value == "0"
+                || value.starts_with('0')
+                || !value.bytes().all(|byte| byte.is_ascii_digit())
+            {
                 return None;
             }
-            (stage, retry)
+            (stage, value.to_owned())
         }
-        None => (stage, 0),
+        None => (stage, "0".into()),
     };
     let stage = match stage {
         "primary" => RecoveryStage::Primary,
@@ -57,6 +60,29 @@ fn parse_suffix(suffix: &str) -> Option<(&str, RecoveryStage, u32)> {
         _ => return None,
     };
     Some((digest, stage, retry))
+}
+
+fn retry_is_newer(candidate: &str, current: &str) -> bool {
+    candidate.len() > current.len()
+        || candidate.len() == current.len() && candidate.cmp(current) == Ordering::Greater
+}
+
+fn increment_retry(value: &str) -> String {
+    let mut digits = value.as_bytes().to_vec();
+    let mut carry = true;
+    for digit in digits.iter_mut().rev() {
+        if *digit == b'9' {
+            *digit = b'0';
+        } else {
+            *digit += 1;
+            carry = false;
+            break;
+        }
+    }
+    if carry {
+        digits.insert(0, b'1');
+    }
+    String::from_utf8(digits).expect("retry counter contains only ASCII digits")
 }
 
 pub(super) struct RecoveryHistory<'a> {
@@ -130,7 +156,8 @@ impl<'a> RecoveryHistory<'a> {
              WHERE i.principal=?1 AND i.target=?2 AND i.request_key GLOB ?3
                 AND (i.state IN ('admitted','unknown','dispatching') OR d.phase='handing_off'
                      OR i.request_key=?6 OR i.request_key GLOB ?7
-                     OR julianday(i.created_at) > julianday(?4, '-10 minutes') OR same_id)",
+                     OR julianday(i.created_at) > julianday(?4, '-10 minutes') OR same_id)
+             ORDER BY i.created_at ASC, i.request_key ASC",
         ).map_err(|_| GateError::Store)?;
         let base = format!("{}:{}", self.prefix, self.digest);
         let rows = stmt
@@ -391,7 +418,7 @@ impl<'a> RecoveryHistory<'a> {
             }
         }
 
-        let mut current = None;
+        let mut current: Option<(String, &Delivery)> = None;
         let mut claimed_suffix = None;
         for delivery in deliveries {
             let suffix = self.suffix(delivery);
@@ -411,7 +438,10 @@ impl<'a> RecoveryHistory<'a> {
                     {
                         return Ok(None);
                     }
-                    if current.is_none_or(|(highest, _)| retry > highest) {
+                    if current
+                        .as_ref()
+                        .is_none_or(|(highest, _)| retry_is_newer(&retry, highest))
+                    {
                         current = Some((retry, delivery));
                     }
                     if !matches!(
@@ -430,17 +460,14 @@ impl<'a> RecoveryHistory<'a> {
         }
 
         let (retry, claimed) = match current {
-            None => (0, false),
+            None => ("0".into(), false),
             Some((retry, row)) if row.state == DeliveryState::DefinitelyNotSent => {
-                let Some(next) = retry.checked_add(1) else {
-                    return Ok(None);
-                };
-                (next, false)
+                (increment_retry(&retry), false)
             }
             Some((retry, row)) => (retry, row.state == DeliveryState::Claimed),
         };
         let base = format!("{}:{}", self.digest, stage.label());
-        let suffix = if retry == 0 {
+        let suffix = if retry == "0" {
             base
         } else {
             format!("{base}:{retry}")
@@ -886,5 +913,12 @@ mod tests {
         assert!(resumed.claimed);
         assert_eq!(resumed.suffix, retry.suffix);
         assert!(history.matches_claim(&fixture.db(), &resumed, NOW).unwrap());
+    }
+
+    #[test]
+    fn retry_counter_continues_past_u32_without_a_terminal_cap() {
+        assert_eq!(increment_retry("4294967295"), "4294967296");
+        assert_eq!(increment_retry("999999999999999999999999"), "1000000000000000000000000");
+        assert!(retry_is_newer("1000000000000000000000000", "999999999999999999999999"));
     }
 }

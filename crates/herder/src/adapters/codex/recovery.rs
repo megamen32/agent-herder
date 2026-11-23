@@ -322,7 +322,7 @@ impl RecoveryControl for CodexControl {
         {
             return Err(not_sent("invalid Codex recovery target, route, or input"));
         }
-        let alternate = route.provider != boundary.provider;
+        let alternate = route.provider != boundary.provider || route.model != boundary.model;
         let expected_model = match (
             !alternate,
             boundary.model.as_deref(),
