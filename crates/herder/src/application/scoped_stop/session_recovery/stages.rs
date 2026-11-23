@@ -113,6 +113,7 @@ struct Delivery {
     phase: Option<String>,
     task_result: Option<String>,
     dispatch_scope: Option<String>,
+    dispatch_updated_at: Option<String>,
     claim_before_boundary: bool,
     matches_boundary: bool,
 }
@@ -207,6 +208,7 @@ impl<'a> RecoveryHistory<'a> {
                         phase,
                         task_result: row.get(10)?,
                         dispatch_scope: row.get(5)?,
+                        dispatch_updated_at: row.get(9)?,
                         matches_boundary: row.get(8)?,
                         claim_before_boundary,
                     })
@@ -242,6 +244,28 @@ impl<'a> RecoveryHistory<'a> {
         let suffix = self.suffix(delivery);
         delivery.intent_id == format!("{}-intent:{suffix}", self.prefix)
             && delivery.task_id == format!("{}-task:{suffix}", self.prefix)
+    }
+
+    fn quota_probe_recent(delivery: &Delivery, now: &str) -> bool {
+        if delivery.state != DeliveryState::DefinitelyNotSent
+            || !delivery.task_result.as_deref().is_some_and(|result| {
+                result.contains("quota") && result.contains("unconfirmed")
+            })
+        {
+            return false;
+        }
+        let Some(updated_at) = delivery.dispatch_updated_at.as_deref() else {
+            return false;
+        };
+        let (Ok(updated_at), Ok(now)) = (
+            chrono::DateTime::parse_from_rfc3339(updated_at),
+            chrono::DateTime::parse_from_rfc3339(now),
+        ) else {
+            return false;
+        };
+        let elapsed = now.signed_duration_since(updated_at);
+        elapsed >= chrono::TimeDelta::zero()
+            && elapsed < chrono::TimeDelta::seconds(super::SCAN_INTERVAL.as_secs() as i64)
     }
 
     fn exact_receipt(&self, db: &Connection, delivery: &Delivery) -> Result<bool, GateError> {
@@ -285,7 +309,7 @@ impl<'a> RecoveryHistory<'a> {
                 delivery.state = DeliveryState::DefinitelyNotSent;
             }
         }
-        let attempt = self.decide(&tx, &deliveries)?;
+        let attempt = self.decide(&tx, &deliveries, now)?;
         tx.commit().map_err(|_| GateError::Store)?;
         Ok(attempt)
     }
@@ -382,7 +406,7 @@ impl<'a> RecoveryHistory<'a> {
         now: &str,
     ) -> Result<bool, GateError> {
         Ok(self
-            .decide(db, &self.deliveries(db, now)?)?
+            .decide(db, &self.deliveries(db, now)?, now)?
             .is_some_and(|candidate| candidate.claimed && candidate.suffix == attempt.suffix))
     }
 
@@ -390,6 +414,7 @@ impl<'a> RecoveryHistory<'a> {
         &self,
         db: &Connection,
         deliveries: &[Delivery],
+        now: &str,
     ) -> Result<Option<RecoveryAttempt>, GateError> {
         let mut stage = RecoveryStage::Primary;
         for delivery in deliveries {
@@ -427,6 +452,9 @@ impl<'a> RecoveryHistory<'a> {
                     return Ok(None);
                 }
                 continue;
+            }
+            if Self::quota_probe_recent(delivery, now) {
+                return Ok(None);
             }
 
             match parse_suffix(suffix) {
