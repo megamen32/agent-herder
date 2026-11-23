@@ -679,7 +679,7 @@ class ComponentAncestry(unittest.TestCase):
         receipt = {"response": {"runtime": {"source_commit": self.new}}}
         browser = {"schema": 2, "type": "herder-native-profile-rebind", "kinds": ["chatgpt", "zai"]}
         for name in (".github/workflows/fleet-session.yml", "integrations/chrome/agent-herder/background.js",
-                     "deploy/fleet/launch-v1-core.py"):
+                     "deploy/fleet/launch-v1-core.py", "deploy/fleet/process-leases-migration-launcher-test.py"):
             path = self.repo / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("Browser owner transport change\n")
