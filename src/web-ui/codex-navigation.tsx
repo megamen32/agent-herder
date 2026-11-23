@@ -39,6 +39,16 @@ const pageHref = (page: "chat" | "projects" | "machines" | "search" | "jobs" | "
 };
 
 export function CodexNavigation(props: NavigationProps) {
+  const [moreOpen, setMoreOpen] = React.useState(false);
+  const navRef = React.useRef<HTMLElement>(null);
+  React.useEffect(() => {
+    if (!moreOpen) return;
+    const close = (event: globalThis.PointerEvent) => { if (!navRef.current?.contains(event.target as Node)) setMoreOpen(false); };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setMoreOpen(false); };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", escape); };
+  }, [moreOpen]);
   const items: Array<{ id: keyof typeof paths; label: string; action: () => void; href?: string }> = [
     { id: "chat", label: "Чаты", action: props.onChat, href: pageHref("chat") },
     { id: "new", label: "Новый чат", action: props.onNew },
@@ -51,22 +61,30 @@ export function CodexNavigation(props: NavigationProps) {
     { id: "settings", label: "Настройки", action: props.onSettings, href: pageHref("settings") },
     { id: "menu", label: "Ещё", action: props.onMenu },
   ];
-  return <nav className="codex-navigation" aria-label="Основная навигация">
+  return <nav ref={navRef} className="codex-navigation" aria-label="Основная навигация">
     <div className="codex-navigation-items">{items.map((item) => {
       const selected = item.id === "chat"
         ? props.active === "chat" && props.chatsOpen
         : item.id === "menu"
           ? props.menuOpen
           : item.id === props.active;
-      const className = `${item.id === "menu" ? "nav-menu-toggle " : ""}${selected ? "active" : ""}`;
+      const className = `nav-item-${item.id} ${item.id === "menu" ? "nav-menu-toggle " : ""}${selected ? "active" : ""}`;
       const icon = <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d={paths[item.id]} /></svg>;
       const label = <span className="nav-label">{item.label}</span>;
       const href = item.href;
-      if (href === undefined) return <button key={item.id} type="button" title={item.label} aria-label={item.label} aria-controls={item.id === "chat" ? "herder-chat-list" : undefined} aria-expanded={item.id === "chat" ? props.chatsOpen : item.id === "menu" ? props.menuOpen : undefined} aria-pressed={item.id === "menu" ? undefined : selected} className={className} onClick={item.action}>{icon}{label}</button>;
+      if (href === undefined) return <button key={item.id} type="button" title={item.label} aria-label={item.label} aria-controls={item.id === "chat" ? "herder-chat-list" : undefined} aria-expanded={item.id === "chat" ? props.chatsOpen : item.id === "menu" ? props.menuOpen : undefined} aria-pressed={item.id === "menu" ? undefined : selected} className={className} onClick={() => { setMoreOpen(false); item.action(); }}>{icon}{label}</button>;
       // Настоящая ссылка: обычный клик переключает экран без перезагрузки,
       // а средний клик / «открыть в новой вкладке» открывает раздел по адресу.
-      return <a key={item.id} href={href} title={item.label} aria-label={item.label} aria-controls={item.id === "chat" ? "herder-chat-list" : undefined} aria-expanded={item.id === "chat" ? props.chatsOpen : undefined} aria-current={selected ? "page" : undefined} className={className} onClick={(event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); item.action(); }}>{icon}{label}</a>;
-    })}</div>
+      return <a key={item.id} href={href} title={item.label} aria-label={item.label} aria-controls={item.id === "chat" ? "herder-chat-list" : undefined} aria-expanded={item.id === "chat" ? props.chatsOpen : undefined} aria-current={selected ? "page" : undefined} className={className} onClick={(event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); setMoreOpen(false); item.action(); }}>{icon}{label}</a>;
+    })}<button type="button" className={`mobile-nav-more ${moreOpen ? "active" : ""}`} aria-label="Ещё" aria-expanded={moreOpen} aria-controls="mobile-more-menu" onClick={() => setMoreOpen(value => !value)}><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d={paths.menu} /></svg><span className="nav-label">Ещё</span></button></div>
+    {moreOpen && <div id="mobile-more-menu" className="mobile-more-menu" role="region" aria-label="Другие разделы">
+      <strong>Ещё</strong>
+      {([
+        ["Проекты", "projects", props.onProjects], ["Машины", "machines", props.onMachines],
+        ["Статистика", "statistics", props.onStatistics], ["Настройки", "settings", props.onSettings],
+        ["Диагностика и логи", "logs", props.onLogs],
+      ] as const).map(([label, page, action]) => <a key={page} href={pageHref(page)} onClick={event => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); setMoreOpen(false); action(); }}>{label}<span aria-hidden="true">›</span></a>)}
+    </div>}
     <span className="codex-navigation-mark" title="Agent Herder">AH</span>
   </nav>;
 }
