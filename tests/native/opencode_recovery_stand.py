@@ -382,8 +382,15 @@ def main():
                 chain_rows = durable(database, chained)
                 require(len(chain_rows) == 1 and chain_rows[0][0] in ("admitted", "confirmed"),
                         "same-route retry was not recorded")
-            require(reserve.count == 0 and not durable(database, exhausted),
-                    "an unverified quota authorized a send")
+            exhausted_rows = durable(database, exhausted)
+            if exhausted_rows:
+                require(len(exhausted_rows) == 1
+                        and exhausted_rows[0][0] == "rejected"
+                        and exhausted_rows[0][1] is None
+                        and json.loads(exhausted_rows[0][2])["native_submit"] == "definitely_not_sent",
+                        f"unknown quota probe was not fenced before native send: {exhausted_rows}")
+            require(reserve.count == 0,
+                    f"an unverified quota authorized a reserve send: {reserve.received}")
 
             route["omniroute"]["database"] = str(exact)
             private_write(profile, json.dumps(data))
@@ -426,13 +433,16 @@ def main():
                 require(verified(reopened, endpoint, database, shutdown, refs[shutdown], shutdown_input,
                                  module.ANSWER, "fixture-primary", SHUTDOWN_MODEL) == shutdown_receipt,
                         "owner restart did not retain the recovery after SIGTERM")
-            require(not durable(database, exhausted)
+            require(durable(database, exhausted) == exhausted_rows
                     and primary.received.count(CRASH_MODEL) == 2 and primary.received.count(QUOTA_MODEL) == failures
                     and primary.received.count(THROTTLED_MODEL) == 2
                     and primary.received.count(UNKNOWN_FAILURE_MODEL) == 2
                     and primary.received.count(SHUTDOWN_MODEL) == 2
                     and primary.received.count(CHAIN_MODEL) == 2
-                    and reserve.count == 1 and reserve.received == [FALLBACK_MODEL], "model requests were repeated")
+                    and reserve.count == 1 and reserve.received == [FALLBACK_MODEL],
+                    f"model requests were repeated: exhausted={durable(database, exhausted)}; "
+                    f"primary={{model: primary.received.count(model) for model in primary_models}}; "
+                    f"reserve={reserve.received}")
             for model, sid in protected.items():
                 require(primary.received.count(model) == 1 and not durable(database, sid)
                         and messages(endpoint, sid) == original_history[sid],

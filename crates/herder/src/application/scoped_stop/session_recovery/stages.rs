@@ -6,13 +6,13 @@ use crate::{
     auth::identity::PrincipalId,
     domain::{
         address::{SessionAddress, SessionRef},
-        recovery::{RecoveryBoundary, RecoveryFailure},
+        recovery::RecoveryBoundary,
     },
 };
 use rmcp::model::CallToolResult;
 use rusqlite::{Connection, TransactionBehavior, params};
 use serde_json::json;
-use std::borrow::Cow;
+use std::{borrow::Cow, cmp::Ordering};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum RecoveryStage {
@@ -36,20 +36,23 @@ pub(super) struct RecoveryAttempt {
     pub claimed: bool,
 }
 
-fn parse_suffix(suffix: &str) -> Option<(&str, RecoveryStage, u32)> {
+fn parse_suffix(suffix: &str) -> Option<(&str, RecoveryStage, String)> {
     let (digest, stage) = suffix.split_once(':')?;
     if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return None;
     }
     let (stage, retry) = match stage.split_once(':') {
         Some((stage, value)) => {
-            let retry: u32 = value.parse().ok()?;
-            if retry == 0 || retry.to_string() != value {
+            if value.is_empty()
+                || value == "0"
+                || value.starts_with('0')
+                || !value.bytes().all(|byte| byte.is_ascii_digit())
+            {
                 return None;
             }
-            (stage, retry)
+            (stage, value.to_owned())
         }
-        None => (stage, 0),
+        None => (stage, "0".into()),
     };
     let stage = match stage {
         "primary" => RecoveryStage::Primary,
@@ -59,6 +62,29 @@ fn parse_suffix(suffix: &str) -> Option<(&str, RecoveryStage, u32)> {
     Some((digest, stage, retry))
 }
 
+fn retry_is_newer(candidate: &str, current: &str) -> bool {
+    candidate.len() > current.len()
+        || candidate.len() == current.len() && candidate.cmp(current) == Ordering::Greater
+}
+
+fn increment_retry(value: &str) -> String {
+    let mut digits = value.as_bytes().to_vec();
+    let mut carry = true;
+    for digit in digits.iter_mut().rev() {
+        if *digit == b'9' {
+            *digit = b'0';
+        } else {
+            *digit += 1;
+            carry = false;
+            break;
+        }
+    }
+    if carry {
+        digits.insert(0, b'1');
+    }
+    String::from_utf8(digits).expect("retry counter contains only ASCII digits")
+}
+
 pub(super) struct RecoveryHistory<'a> {
     prefix: String,
     principal: &'a str,
@@ -66,7 +92,6 @@ pub(super) struct RecoveryHistory<'a> {
     address: &'a SessionAddress,
     digest: &'a str,
     native_id: Cow<'a, str>,
-    terminal_failure: bool,
     boundary_started_at_ms: u64,
 }
 
@@ -88,7 +113,7 @@ struct Delivery {
     phase: Option<String>,
     task_result: Option<String>,
     dispatch_scope: Option<String>,
-    recent: bool,
+    dispatch_updated_at: Option<String>,
     claim_before_boundary: bool,
     matches_boundary: bool,
 }
@@ -110,7 +135,6 @@ impl<'a> RecoveryHistory<'a> {
             address,
             digest,
             native_id,
-            terminal_failure: boundary.failure != RecoveryFailure::Interrupted,
             boundary_started_at_ms: boundary.started_at_ms,
         }
     }
@@ -125,7 +149,6 @@ impl<'a> RecoveryHistory<'a> {
                                   AND json_extract(t.result_json, '$.structuredContent.code')
                                       IN ('adapter_refused','human_stop_active'), 0)
                          ELSE 0 END,
-                    julianday(i.created_at) > julianday(?4, '-10 minutes'),
                     CASE WHEN json_valid(i.native_receipt)
                          THEN coalesce(json_extract(i.native_receipt, '$.native_id')=?5, 0)
                          ELSE 0 END AS same_id, d.updated_at, t.result_json
@@ -134,7 +157,8 @@ impl<'a> RecoveryHistory<'a> {
              WHERE i.principal=?1 AND i.target=?2 AND i.request_key GLOB ?3
                 AND (i.state IN ('admitted','unknown','dispatching') OR d.phase='handing_off'
                      OR i.request_key=?6 OR i.request_key GLOB ?7
-                     OR julianday(i.created_at) > julianday(?4, '-10 minutes') OR same_id)",
+                     OR julianday(i.created_at) > julianday(?4, '-10 minutes') OR same_id)
+             ORDER BY i.created_at ASC, i.request_key ASC",
         ).map_err(|_| GateError::Store)?;
         let base = format!("{}:{}", self.prefix, self.digest);
         let rows = stmt
@@ -167,7 +191,7 @@ impl<'a> RecoveryHistory<'a> {
                         }
                         _ => DeliveryState::Uncertain,
                     };
-                    let dispatch_time: Option<String> = row.get(10)?;
+                    let dispatch_time: Option<String> = row.get(9)?;
                     let claim_before_boundary = dispatch_time
                         .as_deref()
                         .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
@@ -182,10 +206,10 @@ impl<'a> RecoveryHistory<'a> {
                         key: row.get(2)?,
                         state,
                         phase,
-                        task_result: row.get(11)?,
+                        task_result: row.get(10)?,
                         dispatch_scope: row.get(5)?,
-                        recent: row.get::<_, Option<bool>>(8)?.unwrap_or(false),
-                        matches_boundary: row.get(9)?,
+                        dispatch_updated_at: row.get(9)?,
+                        matches_boundary: row.get(8)?,
                         claim_before_boundary,
                     })
                 },
@@ -222,6 +246,28 @@ impl<'a> RecoveryHistory<'a> {
             && delivery.task_id == format!("{}-task:{suffix}", self.prefix)
     }
 
+    fn quota_probe_recent(delivery: &Delivery, now: &str) -> bool {
+        if delivery.state != DeliveryState::DefinitelyNotSent
+            || !delivery.task_result.as_deref().is_some_and(|result| {
+                result.contains("quota") && result.contains("unconfirmed")
+            })
+        {
+            return false;
+        }
+        let Some(updated_at) = delivery.dispatch_updated_at.as_deref() else {
+            return false;
+        };
+        let (Ok(updated_at), Ok(now)) = (
+            chrono::DateTime::parse_from_rfc3339(updated_at),
+            chrono::DateTime::parse_from_rfc3339(now),
+        ) else {
+            return false;
+        };
+        let elapsed = now.signed_duration_since(updated_at);
+        elapsed >= chrono::TimeDelta::zero()
+            && elapsed < chrono::TimeDelta::seconds(super::SCAN_INTERVAL.as_secs() as i64)
+    }
+
     fn exact_receipt(&self, db: &Connection, delivery: &Delivery) -> Result<bool, GateError> {
         if !delivery.matches_boundary || !self.is_bound(delivery) {
             return Ok(false);
@@ -242,8 +288,7 @@ impl<'a> RecoveryHistory<'a> {
             .map_err(|_| GateError::Store)?;
         let mut deliveries = self.deliveries(&tx, now)?;
         for delivery in &mut deliveries {
-            if self.terminal_failure
-                && delivery.state == DeliveryState::Admitted
+            if delivery.state == DeliveryState::Admitted
                 && (delivery.phase.is_none() || delivery.dispatch_scope.as_deref() == Some(scope))
                 && self.exact_receipt(&tx, delivery)?
             {
@@ -264,7 +309,7 @@ impl<'a> RecoveryHistory<'a> {
                 delivery.state = DeliveryState::DefinitelyNotSent;
             }
         }
-        let attempt = self.decide(&tx, &deliveries)?;
+        let attempt = self.decide(&tx, &deliveries, now)?;
         tx.commit().map_err(|_| GateError::Store)?;
         Ok(attempt)
     }
@@ -361,7 +406,7 @@ impl<'a> RecoveryHistory<'a> {
         now: &str,
     ) -> Result<bool, GateError> {
         Ok(self
-            .decide(db, &self.deliveries(db, now)?)?
+            .decide(db, &self.deliveries(db, now)?, now)?
             .is_some_and(|candidate| candidate.claimed && candidate.suffix == attempt.suffix))
     }
 
@@ -369,34 +414,53 @@ impl<'a> RecoveryHistory<'a> {
         &self,
         db: &Connection,
         deliveries: &[Delivery],
+        now: &str,
     ) -> Result<Option<RecoveryAttempt>, GateError> {
         let mut stage = RecoveryStage::Primary;
         for delivery in deliveries {
-            if matches!(
-                delivery.state,
-                DeliveryState::Uncertain | DeliveryState::Admitted
-            ) {
+            let current_key = self.is_current(self.suffix(delivery));
+            if (delivery.state == DeliveryState::Claimed
+                || delivery.phase.as_deref() == Some("handing_off"))
+                && !current_key
+            {
+                return Ok(None);
+            }
+            if delivery.state == DeliveryState::Admitted {
                 return Ok(None);
             }
             if !delivery.matches_boundary {
                 continue;
             }
-            if !self.terminal_failure
-                || stage == RecoveryStage::Fallback
-                || delivery.state != DeliveryState::Settled
-                || !self.exact_receipt(db, delivery)?
-            {
+            if stage == RecoveryStage::Fallback {
+                return Ok(None);
+            }
+            if delivery.state != DeliveryState::Settled {
+                if matches!(
+                    delivery.state,
+                    DeliveryState::Prepared
+                        | DeliveryState::DefinitelyNotSent
+                ) {
+                    continue;
+                }
+                if delivery.state == DeliveryState::Uncertain {
+                    continue;
+                }
+                return Ok(None);
+            }
+            if !self.exact_receipt(db, delivery)? {
                 return Ok(None);
             }
             match parse_suffix(self.suffix(delivery)) {
-                Some((digest, RecoveryStage::Primary, _)) if digest != self.digest => {
+                Some((digest, RecoveryStage::Primary | RecoveryStage::Fallback, _))
+                    if digest != self.digest =>
+                {
                     stage = RecoveryStage::Fallback;
                 }
                 _ => return Ok(None),
             }
         }
 
-        let mut current = None;
+        let mut current: Option<(String, &Delivery)> = None;
         let mut claimed_suffix = None;
         for delivery in deliveries {
             let suffix = self.suffix(delivery);
@@ -405,6 +469,9 @@ impl<'a> RecoveryHistory<'a> {
                     return Ok(None);
                 }
                 continue;
+            }
+            if Self::quota_probe_recent(delivery, now) {
+                return Ok(None);
             }
 
             match parse_suffix(suffix) {
@@ -416,7 +483,10 @@ impl<'a> RecoveryHistory<'a> {
                     {
                         return Ok(None);
                     }
-                    if current.is_none_or(|(highest, _)| retry > highest) {
+                    if current
+                        .as_ref()
+                        .is_none_or(|(highest, _)| retry_is_newer(&retry, highest))
+                    {
                         current = Some((retry, delivery));
                     }
                     if !matches!(
@@ -424,7 +494,13 @@ impl<'a> RecoveryHistory<'a> {
                         DeliveryState::Claimed
                             | DeliveryState::Prepared
                             | DeliveryState::DefinitelyNotSent
+                            | DeliveryState::Uncertain
                     ) {
+                        return Ok(None);
+                    }
+                    if delivery.state == DeliveryState::Uncertain
+                        && delivery.phase.as_deref() == Some("handing_off")
+                    {
                         return Ok(None);
                     }
                 }
@@ -434,29 +510,26 @@ impl<'a> RecoveryHistory<'a> {
             }
         }
 
-        let (retry, claimed, existing) = match current {
-            None => (0, false, false),
-            Some((retry, row)) if row.state == DeliveryState::DefinitelyNotSent => {
-                let Some(next) = retry.checked_add(1) else {
-                    return Ok(None);
-                };
-                (next, false, false)
+        let (retry, claimed) = match current {
+            None => ("0".into(), false),
+            Some((retry, row))
+                if matches!(
+                    row.state,
+                    DeliveryState::DefinitelyNotSent
+                        | DeliveryState::Uncertain
+                ) =>
+            {
+                (increment_retry(&retry), false)
             }
-            Some((retry, row)) => (retry, row.state == DeliveryState::Claimed, true),
+            Some((retry, row)) => (retry, row.state == DeliveryState::Claimed),
         };
         let base = format!("{}:{}", self.digest, stage.label());
-        let suffix = if retry == 0 {
+        let suffix = if retry == "0" {
             base
         } else {
             format!("{base}:{retry}")
         };
-        if claimed_suffix.is_some_and(|claimed| claimed != suffix)
-            || deliveries
-                .iter()
-                .filter(|row| row.recent && (!existing || self.suffix(row) != suffix))
-                .count()
-                >= 3
-        {
+        if claimed_suffix.is_some_and(|claimed| claimed != suffix) {
             return Ok(None);
         }
 
@@ -476,6 +549,7 @@ mod tests {
         domain::{
             adapter::NativeReceipt,
             address::{InstanceRef, NodeRef},
+            recovery::RecoveryFailure,
         },
     };
     use std::path::PathBuf;
@@ -613,7 +687,7 @@ mod tests {
     }
 
     #[test]
-    fn exact_failed_primary_advances_across_restarts_and_failed_fallback_holds() {
+    fn exact_failed_primary_advances_across_restarts_and_failed_fallback_continues() {
         for (harness, primary_id, fallback_id) in [
             ("codex", "retry-turn", "fallback-turn"),
             ("opencode", "retry-input", "fallback-input"),
@@ -695,19 +769,18 @@ mod tests {
                     .is_none()
             );
             let failed_fallback = fixture.history(harness, REPLACEMENT, &replacement);
-            assert!(
+            let next = failed_fallback
+                .next_attempt(&mut fixture.db(), SCOPE, NOW)
+                .unwrap()
+                .unwrap();
+            assert_eq!(next.stage, RecoveryStage::Fallback);
+            assert_eq!(next.suffix, format!("{REPLACEMENT}:fallback"));
+            assert_eq!(
                 failed_fallback
                     .next_attempt(&mut fixture.db(), SCOPE, NOW)
-                    .unwrap()
-                    .is_none()
+                    .unwrap(),
+                Some(next)
             );
-            assert!(
-                failed_fallback
-                    .next_attempt(&mut fixture.db(), SCOPE, NOW)
-                    .unwrap()
-                    .is_none()
-            );
-
             let next = fixture
                 .history(harness, FRESH, &fresh)
                 .next_attempt(&mut fixture.db(), SCOPE, NOW)
@@ -718,13 +791,11 @@ mod tests {
     }
 
     #[test]
-    fn absent_or_mismatching_receipts_and_projected_interruptions_do_not_advance() {
+    fn technical_failures_continue_without_waiting_for_receipts() {
         let retry = boundary("retry-turn", "retry-input");
         for (state, phase, id) in [
             ("unknown", "finished", None),
             ("unknown", "finished", Some("retry-turn")),
-            ("dispatching", "handing_off", Some("retry-turn")),
-            ("admitted", "finished", Some("retry-input")),
             ("admitted", "finished", None),
         ] {
             let fixture = Fixture::new();
@@ -736,14 +807,30 @@ mod tests {
                 phase,
                 false,
             );
-            assert!(
-                fixture
-                    .history("codex", RETRY, &retry)
-                    .next_attempt(&mut fixture.db(), SCOPE, NOW)
-                    .unwrap()
-                    .is_none(),
-                "{state} {id:?}"
+            let attempt = fixture
+                .history("codex", RETRY, &retry)
+                .next_attempt(&mut fixture.db(), SCOPE, NOW)
+                .unwrap();
+            assert!(attempt.is_some(), "{state} {id:?}");
+        }
+        for (state, phase, id) in [
+            ("dispatching", "handing_off", Some("retry-turn")),
+            ("admitted", "finished", Some("retry-input")),
+        ] {
+            let fixture = Fixture::new();
+            fixture.insert(
+                "codex",
+                &format!("{ORIGINAL}:primary"),
+                state,
+                id,
+                phase,
+                false,
             );
+            let attempt = fixture
+                .history("codex", RETRY, &retry)
+                .next_attempt(&mut fixture.db(), SCOPE, NOW)
+                .unwrap();
+            assert!(attempt.is_none(), "{state} {id:?}");
         }
         let fixture = Fixture::new();
         fixture.insert(
@@ -756,13 +843,13 @@ mod tests {
         );
         let mut projected = retry;
         projected.failure = RecoveryFailure::Interrupted;
-        assert!(
-            fixture
-                .history("codex", RETRY, &projected)
-                .next_attempt(&mut fixture.db(), SCOPE, NOW)
-                .unwrap()
-                .is_none()
-        );
+        let attempt = fixture
+            .history("codex", RETRY, &projected)
+            .next_attempt(&mut fixture.db(), SCOPE, NOW)
+            .unwrap()
+            .unwrap();
+        assert_eq!(attempt.stage, RecoveryStage::Fallback);
+        assert_eq!(attempt.suffix, format!("{RETRY}:fallback"));
     }
 
     #[test]
@@ -846,13 +933,15 @@ mod tests {
                 phase,
                 false,
             );
-            assert!(
-                fixture
-                    .history("codex", FRESH, &new_user)
-                    .next_attempt(&mut fixture.db(), SCOPE, observed)
-                    .unwrap()
-                    .is_none()
-            );
+            let attempt = fixture
+                .history("codex", FRESH, &new_user)
+                .next_attempt(&mut fixture.db(), SCOPE, observed)
+                .unwrap();
+            if state == "unknown" {
+                assert!(attempt.is_some());
+            } else {
+                assert!(attempt.is_none());
+            }
             assert_eq!(
                 fixture
                     .db()
@@ -897,5 +986,12 @@ mod tests {
         assert!(resumed.claimed);
         assert_eq!(resumed.suffix, retry.suffix);
         assert!(history.matches_claim(&fixture.db(), &resumed, NOW).unwrap());
+    }
+
+    #[test]
+    fn retry_counter_continues_past_u32_without_a_terminal_cap() {
+        assert_eq!(increment_retry("4294967295"), "4294967296");
+        assert_eq!(increment_retry("999999999999999999999999"), "1000000000000000000000000");
+        assert!(retry_is_newer("1000000000000000000000000", "999999999999999999999999"));
     }
 }

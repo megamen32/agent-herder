@@ -208,17 +208,6 @@ impl RecoveryProfile {
             .as_ref()
     }
 
-    fn saved_route_quota_guarded(
-        &self,
-        native: &dyn RecoveryControl,
-        route: &RecoveryRoute,
-        cwd: &str,
-    ) -> bool {
-        self.router(&route.provider, route.model.as_deref(), cwd)
-            .is_some()
-            || native.harness() == "codex" && route.provider == "openai"
-    }
-
     fn quota(
         &self,
         native: &dyn RecoveryControl,
@@ -361,14 +350,6 @@ struct QuotaPolicyFile {
 struct QuotaPolicy {
     enabled: bool,
     min_remaining_percent: f64,
-    on_unknown: UnknownQuota,
-}
-
-#[derive(PartialEq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum UnknownQuota {
-    Block,
-    Allow,
 }
 
 impl Default for QuotaPolicy {
@@ -376,7 +357,6 @@ impl Default for QuotaPolicy {
         Self {
             enabled: true,
             min_remaining_percent: 20.0,
-            on_unknown: UnknownQuota::Block,
         }
     }
 }
@@ -407,38 +387,47 @@ fn select_route(
     native: &dyn RecoveryControl,
     stage: RecoveryStage,
 ) -> Option<RecoveryRoute> {
-    let (wait, fallback) = settings.quota_options(native.harness(), &target.native_session_id);
+    let (wait, _) = settings.quota_options(native.harness(), &target.native_session_id);
     let reserve = quota_policy.min_remaining_percent.ceil() as u8;
     let saved = RecoveryRoute {
         provider: boundary.provider.clone(),
         model: boundary.model.clone(),
     };
-    if stage == RecoveryStage::Fallback {
-        if !fallback {
-            return None;
-        }
-        return profile.fallback_routes.iter().find_map(|route| {
+    let find_alternate = || {
+        profile.fallback_routes.iter().find_map(|route| {
             let candidate = RecoveryRoute {
                 provider: route.provider.clone(),
                 model: Some(route.model.clone()),
             };
+            let supports = native.supports_alternate(target, boundary, &candidate);
+            let quota = profile.quota(
+                native,
+                &route.provider,
+                Some(&route.model),
+                &boundary.cwd,
+                reserve,
+            );
             (candidate != saved
                 && route.workspace == Path::new(&boundary.cwd)
-                && native.supports_alternate(target, boundary, &candidate)
-                && profile.quota(
-                    native,
-                    &route.provider,
-                    Some(&route.model),
-                    &boundary.cwd,
-                    reserve,
-                ) == Some(true))
+                && supports
+                && quota == Some(true))
             .then_some(candidate)
-        });
+        })
+    };
+    let alternate = find_alternate();
+    if stage == RecoveryStage::Fallback {
+        if alternate.is_none()
+            && native.same_route_retry(target, boundary) == SameRouteRetry::Hold
+        {
+            // Browser adapters expose no provider-switch capability and hold
+            // their own retry policy. Do not synthesize a fallback delivery.
+            return None;
+        }
+        return Some(alternate.unwrap_or(saved));
     }
 
     let from_quota_failure = boundary.failure == RecoveryFailure::Quota;
     let throttled = boundary.failure == RecoveryFailure::Throttled;
-    let metered = profile.saved_route_quota_guarded(native, &saved, &boundary.cwd);
     let primary = if from_quota_failure || throttled || quota_policy.enabled {
         profile.quota(
             native,
@@ -450,20 +439,25 @@ fn select_route(
     } else {
         Some(true)
     };
+    if primary == Some(false) {
+        // A known exhausted primary route skips an unusable same-route probe
+        // and uses a permitted alternate immediately. If none exists, the
+        // caller keeps the boundary pending until a later quota check passes.
+        return alternate;
+    }
     let allowed = if from_quota_failure {
-        wait && primary == Some(true)
+        // An unknown quota is one permitted probe. A known exhausted quota
+        // still follows the configured wait policy.
+        wait && primary == Some(true) || primary.is_none()
     } else if throttled {
         match native.same_route_retry(target, boundary) {
             SameRouteRetry::Hold => false,
-            SameRouteRetry::UseQuotaPolicy => {
-                primary.unwrap_or(quota_policy.on_unknown == UnknownQuota::Allow)
-            }
-            SameRouteRetry::Ready => {
-                primary.unwrap_or(!metered || quota_policy.on_unknown == UnknownQuota::Allow)
-            }
+            SameRouteRetry::UseQuotaPolicy => primary.unwrap_or(true),
+            SameRouteRetry::Ready => primary.unwrap_or(true),
         }
     } else {
-        primary.unwrap_or(!metered || quota_policy.on_unknown == UnknownQuota::Allow)
+        // Any error, including an unclassified one, gets its first retry.
+        primary.unwrap_or(true)
     };
     allowed.then_some(saved)
 }
@@ -592,8 +586,7 @@ impl SessionRecovery {
             .map_err(|_| GateError::Unavailable)?;
         Ok(boundary
             .filter(|b| {
-                recent(b.started_at_ms)
-                    && !b.turn_id.trim().is_empty()
+                !b.turn_id.trim().is_empty()
                     && !b.input_item_id.trim().is_empty()
                     && !self.profile.recovery_held(harness, &address.native_session_id)
                     && self.profile.owns_target(harness, address, b)
@@ -620,7 +613,7 @@ impl SessionRecovery {
             .authority
             .resolve_session(identity, &grants, session, instance)?;
         self.reconcile_pending(identity, &grants, principal, session)?;
-        if self.waits.recovery_blocked(identity, &address) {
+        if self.waits.human_stop_active(identity, &address) {
             return Ok(false);
         }
         let Some((settings, boundary)) = self.eligible_boundary(&address)? else {
@@ -629,7 +622,7 @@ impl SessionRecovery {
         if boundary
             .ancestors
             .iter()
-            .any(|ancestor| self.waits.recovery_blocked(identity, &ancestor.address))
+            .any(|ancestor| self.waits.human_stop_active(identity, &ancestor.address))
         {
             return Ok(false);
         }
@@ -680,7 +673,7 @@ impl SessionRecovery {
         ) else {
             return Ok(false);
         };
-        if self.waits.recovery_blocked(identity, &address) {
+        if self.waits.human_stop_active(identity, &address) {
             return Ok(false);
         }
         let suffix = &attempt.suffix;
@@ -979,6 +972,13 @@ impl BoundedNativeHandoff for RecoveryHandoff<'_> {
             self.route.model.as_deref(),
             &self.boundary.cwd,
         );
+        let saved_quota = self.profile.quota(
+            native,
+            &self.boundary.provider,
+            self.boundary.model.as_deref(),
+            &self.boundary.cwd,
+            reserve,
+        );
         let credential = router.and_then(|_| {
             native.credential(
                 &self.route.provider,
@@ -1011,22 +1011,25 @@ impl BoundedNativeHandoff for RecoveryHandoff<'_> {
             still_available: &still_available,
         });
         let still_allowed = || {
-            recent(self.boundary.started_at_ms)
-                && target_allowed()
+            target_allowed()
                 && (router.is_none()
                     || self.attempt.stage != RecoveryStage::Fallback
                     || still_available())
                 && private_json::<Autostart>(&self.settings_path)
                     .ok()
                     .is_some_and(|settings| {
-                        let (wait, fallback) =
+                        let (wait, _) =
                             settings.quota_options(harness, &plan.target.native_session_id);
+                        let saved_route = RecoveryRoute {
+                            provider: self.boundary.provider.clone(),
+                            model: self.boundary.model.clone(),
+                        };
+                        let alternate = self.route != saved_route;
                         settings.admits(harness, &plan.target.native_session_id, &self.boundary)
-                            && if self.attempt.stage == RecoveryStage::Fallback {
-                                fallback
-                            } else {
-                                self.boundary.failure != RecoveryFailure::Quota || wait
-                            }
+                            && (alternate
+                                || self.boundary.failure != RecoveryFailure::Quota
+                                || wait
+                                || saved_quota.is_none())
                     })
                 && !disarm_held()
         };
@@ -1291,7 +1294,7 @@ mod tests {
             ancestors: vec![],
         };
         let settings = serde_json::from_value(json!({
-            "version": 8, "enabled": true, "fallbackForQuota": true, "waitForQuota": true,
+            "version": 8, "enabled": true, "fallbackForQuota": false, "waitForQuota": true,
             "sessions": [],
         }))
         .unwrap();
@@ -1324,7 +1327,7 @@ mod tests {
         assert_eq!(alternate.provider, "alternate");
         let mut unconfigured = profile.clone();
         unconfigured.fallback_routes.clear();
-        assert!(
+        assert_eq!(
             select_route(
                 &unconfigured,
                 &settings,
@@ -1334,11 +1337,18 @@ mod tests {
                 &control,
                 RecoveryStage::Fallback,
             )
-            .is_none()
+            .unwrap()
+            .provider,
+            "saved"
         );
 
         control.alternate = false;
-        assert!(select(&control, &boundary, RecoveryStage::Fallback).is_none());
+        assert_eq!(
+            select(&control, &boundary, RecoveryStage::Fallback)
+                .unwrap()
+                .provider,
+            "saved"
+        );
         control.alternate = true;
         for failure in [
             RecoveryFailure::Throttled,
@@ -1347,11 +1357,21 @@ mod tests {
         ] {
             boundary.failure = failure;
             control.quota = Some(false);
-            assert!(select(&control, &boundary, RecoveryStage::Primary).is_none());
+            assert_eq!(
+                select(&control, &boundary, RecoveryStage::Primary)
+                    .unwrap()
+                    .provider,
+                "alternate"
+            );
         }
         boundary.failure = RecoveryFailure::Quota;
         control.quota = None;
-        assert!(select(&control, &boundary, RecoveryStage::Primary).is_none());
+        assert_eq!(
+            select(&control, &boundary, RecoveryStage::Primary)
+                .unwrap()
+                .provider,
+            "saved"
+        );
         control.quota = Some(true);
         assert_eq!(
             select(&control, &boundary, RecoveryStage::Primary)

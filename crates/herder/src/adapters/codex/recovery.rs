@@ -279,12 +279,20 @@ impl RecoveryControl for CodexControl {
         }
         let own_subscription = state.recovery_subscriptions.contains(&target.native_session_id);
         let connection = &mut state.connection;
-        read_thread(connection, &target.native_session_id, deadline).is_ok_and(|thread| {
-            (thread["status"]["type"] == "notLoaded" || own_subscription && is_quiescent(&thread))
+        let thread = read_thread(connection, &target.native_session_id, deadline).ok();
+        let thread_ok = thread.as_ref().is_some_and(|thread| {
+            (thread["status"]["type"] == "notLoaded"
+                || own_subscription && is_quiescent(thread)
+                // After our own unsubscribe Codex can expose the cold failed
+                // thread as systemError until the next native read settles it.
+                || thread["status"]["type"] == "systemError"
+                    && thread["canAcceptDirectInput"] == true)
                 && thread["modelProvider"] == boundary.provider
-        }) && read_recovery_providers(connection, &boundary.cwd, deadline)
-            .is_some_and(|providers| plain_responses_provider(&providers[&boundary.provider]))
-            && provider_can_be_overridden(connection, &boundary.provider, deadline)
+        });
+        let provider_ok = read_recovery_providers(connection, &boundary.cwd, deadline)
+            .is_some_and(|providers| plain_responses_provider(&providers[&boundary.provider]));
+        let override_ok = provider_can_be_overridden(connection, &boundary.provider, deadline);
+        thread_ok && provider_ok && override_ok
     }
 
     /// Start a single recovery turn. The caller owns the durable request key
@@ -314,7 +322,7 @@ impl RecoveryControl for CodexControl {
         {
             return Err(not_sent("invalid Codex recovery target, route, or input"));
         }
-        let alternate = route.provider != boundary.provider;
+        let alternate = route.provider != boundary.provider || route.model != boundary.model;
         let expected_model = match (
             !alternate,
             boundary.model.as_deref(),
@@ -413,9 +421,10 @@ impl RecoveryControl for CodexControl {
                 if !matches!(reply["status"].as_str(), Some("unsubscribed" | "notSubscribed" | "notLoaded")) {
                     return Err(not_sent("Codex recovery unsubscribe was not acknowledged"));
                 }
-                recovery_subscriptions.remove(&target.native_session_id);
-                // Never assume unload is synchronous or displace another client.
-                // A later scan may retry without having submitted a turn.
+                // Keep the owner subscription marker until a later scan has
+                // verified the cold state. Unsubscribe may be asynchronous,
+                // and clearing the marker here would make the same owner look
+                // like an external attachment on the next scan.
                 return Err(not_sent("Codex recovery unsubscribed; awaiting verified cold thread"));
             }
             // Use the provider identity already saved by Codex. Replacing its
@@ -539,6 +548,12 @@ impl RecoveryControl for CodexControl {
             "input": [{"type": "text", "text": message}],
             "clientUserMessageId": key.0,
         });
+        if alternate {
+            // `thread/resume` pins the route configuration, while the native
+            // turn must also receive the selected model explicitly. Without
+            // this field Codex can reuse the failed thread's model silently.
+            params["model"] = json!(expected_model);
+        }
         if let Some(parent) = after.boundary.ancestors.first() {
             params["parentTurnId"] = json!(parent.turn_id);
             params["rootTurnId"] = json!(after.root_turn_id);
@@ -795,7 +810,9 @@ fn require_cold_thread(
                 && thread["cwd"] == boundary.cwd
                 && thread["modelProvider"] == boundary.provider
                 && thread["model"].as_str() == boundary.model.as_deref()
-                && thread["status"]["type"] == "notLoaded"
+                && (thread["status"]["type"] == "notLoaded"
+                    || thread["status"]["type"] == "systemError"
+                        && thread["canAcceptDirectInput"] == true)
                 && observation.matches_thread(thread, &target.native_session_id)
                 && is_quiescent(thread)
             {
@@ -1547,6 +1564,18 @@ mod tests {
                 assert_eq!(recovery_failure(&settled), None, "{settled}");
             }
         }
+
+        let unknown_reason = json!({
+            "status": "failed",
+            "startedAt": 100,
+            "completedAt": 101,
+            "reason": "newNativeFailureReason",
+            "error": {"codexErrorInfo": "newErrorKind"},
+        });
+        assert_eq!(
+            recovery_failure(&unknown_reason),
+            Some(RecoveryFailure::Retryable)
+        );
     }
 
     #[test]

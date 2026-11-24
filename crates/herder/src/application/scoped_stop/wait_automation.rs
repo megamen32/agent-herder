@@ -969,8 +969,14 @@ impl WaitAutomationApplication {
         drop(locked);
         self.snapshot(&saved)
     }
-    pub(crate) fn recovery_blocked(&self, identity: &ConnectionIdentity, target: &SessionAddress) -> bool {
-        !matches!(self.recovery_binding(identity, target), Ok(Some(_)))
+    pub(crate) fn human_stop_active(
+        &self,
+        identity: &ConnectionIdentity,
+        target: &SessionAddress,
+    ) -> bool {
+        self.wait_status_current(identity, &target.native_session_id, Some(&target.instance.node.0))
+            .ok()
+            .is_some_and(|proof| proof["reason"] == "human_stop_active")
     }
 
     pub(super) fn recovery_binding(
