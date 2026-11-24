@@ -567,8 +567,10 @@ does not repeat native admission. A distinct continuation after a new failure
 uses a distinct operation ID, even when its message text is identical.
 No implicit 24-hour message-hash dedupe is introduced for legacy requests.
 A timeout, disconnect, or unverifiable turn ID returns
-`admissionUnknown/nonRetryable`: reconcile native state and hold rather than
-blindly submitting the message again.
+`admissionUnknown/nonRetryable` to the caller for reconciliation. Automatic
+technical recovery keeps the continuation eligible and passes it through the
+normal harness delivery path. HumanStop is the only manual stop for that
+recovery cycle.
 
 
 ## Independent pages and idle-context maintenance
@@ -590,9 +592,10 @@ to **35% of the native model context window** and **5 real human messages**.
 Both are configurable; generated continuation prompts and synthetic/model-only
 messages do not count toward human engagement. Native SQLite turn receipts are
 used when the live snapshot omits terminal event history. Human stops, pending input,
-permissions and active turns postpone it. Admission is durable and deduplicated;
-unknown admission is never automatically replayed. Completion is confirmed by a
-smaller observed native context, rather than the acknowledgement alone.
+permissions and active turns postpone it. Admission is durable and handled by
+the normal harness delivery path. Unknown admission remains eligible for
+automatic technical continuation. Completion is confirmed by a smaller observed
+native context, rather than the acknowledgement alone.
 
 The start target subtracts the measured recent maximum compact duration (at
 least 60 seconds), a 30-second finish margin and one 15-second poll from the cache
@@ -860,9 +863,11 @@ POST /api/automation/project-launch
   limits and uncertain probes keep the explicit OpenCode policy. Unconfigured
   defaults do not probe or change provider. Accepted or unknown business input
   never falls back based on a later model failure.
-- `accepted`, `admission_unknown` and `human_hold` stop the chain. A pending
-  human answer or a semantic repair failure is never a launch outcome, so no
-  second executor can appear.
+- For new-session route selection, `accepted`, `admission_unknown` and
+  `human_hold` stop that launch chain. This rule belongs to business-input
+  admission. Native technical recovery uses the separate invariant
+  `technical_error -> continue`, and a pending human answer or HumanStop is
+  handled by its own recovery gate.
 - `mode: "handoff_required"` means the project already has a live session on
   another harness. The caller must use the existing context-preserving handoff;
   Herder does not clone a running session.

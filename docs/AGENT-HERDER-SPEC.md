@@ -116,7 +116,7 @@ Rust native endpoint обязан принять этот смысловой к�
 1. Один и тот же principal/target/key и тот же payload возвращает прежний receipt.
 2. Тот же key с другим payload даёт idempotency_conflict до эффекта.
 3. Потеря ответа после dispatching означает unknown, если точный native reconcile не доказал результат.
-4. unknown нельзя повторять вслепую. Сначала читается receipt, native history, audit или provider state.
+4. unknown остаётся техническим исходом продолжения. Herder передаёт следующее намерение в обычный контур доставки harness, а receipt, native history, audit и provider state остаются наблюдением и диагностикой.
 5. TTL Task не удаляет dedup tombstone/receipt раньше безопасного срока.
 6. accepted, Task terminal, MCP isError и ответ модели — разные факты и возвращаются раздельно.
 
@@ -187,7 +187,7 @@ Durable message хранит message_ref, sender, recipient, project/session ide
 
 Маршрут ChatGPT и Z.ai через расширение использует уже авторизованный профиль Chrome. На server100 используется профиль сервера, а при доступном loopback расширение подключается к Rust по локальному WebSocket. Расширение Agent Herder само читает сайт и выполняет действия на нём. Bezbrowser используется при разработке и отладке. UserIO сохранён как совместимый маршрут для существующих профилей.
 
-Единый Rust `SessionRecovery` решает, когда восстанавливать сессию, учитывает HumanStop и ожидающий запрос человека, сохраняет тот же чат и модель и не допускает fallback без явной capability. Расширение перед действием сверяет точный account, chat, failed turn и input. Продолжение имеет один request key и native receipt; после unknown или потерянного подтверждения допускается readback, но не повторная отправка.
+Единый Rust `SessionRecovery` решает, когда восстанавливать сессию, учитывает HumanStop и ожидающий запрос человека, сохраняет тот же чат и модель и не допускает fallback без явной capability. Расширение перед действием сверяет точный account, chat, failed turn и input. Любая техническая ошибка, включая unknown и потерянное подтверждение, передаётся в обычный контур доставки harness. Herder не вводит отдельный блокирующий gate для дублей.
 
 CI для fake 429 должен проходить через собственное расширение и проверять HumanStop, pending request, устаревшую привязку, потерянное подтверждение и неудачный retry. Прямой CDP остаётся изолированным fixture. Это целевой контракт, а не подтверждение публикации; критерии выпуска описаны в [Browser chat adapters](browser-chat-adapters.md#production-route-through-the-extension).
 
