@@ -10,6 +10,30 @@ export const INCIDENT_MODELS: ReadonlySet<string> = new Set([
   healthModelForHarness("opencode", INCIDENT_EXECUTION),
 ]);
 
+/**
+ * Health repair of the shared gateway must not run on that gateway.
+ *
+ * The health request carries the signed health project identity. Only the
+ * named identities repair the shared OmniRoute target, and they repair it on
+ * the verified independent provider. Every other health project keeps its own
+ * route, and an ordinary (non-health) launch is never touched by this map.
+ */
+export const HEALTH_REPAIR_ROUTES: ReadonlyMap<string, string> = new Map([
+  ["omniroute-guard", [...INCIDENT_MODELS][0]!],
+  ["/home/roomhacker/serversadministartion", [...INCIDENT_MODELS][0]!],
+]);
+
+/**
+ * The verified independent route of one signed health project identity.
+ *
+ * An absent identity means no repair route: the caller keeps the ordinary
+ * project route. The lookup never widens into a fallback provider.
+ */
+export function healthRepairModel(project: unknown): string | undefined {
+  if (typeof project !== "string") return undefined;
+  return HEALTH_REPAIR_ROUTES.get(project.trim().toLowerCase());
+}
+
 /** A qualified route; the project policy determines eligibility. */
 export function isIncidentModelRoute(model: unknown): model is string {
   return typeof model === "string" && model.length <= 256 && model === model.trim()

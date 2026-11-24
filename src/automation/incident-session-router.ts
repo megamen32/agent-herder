@@ -5,7 +5,7 @@ import lockfile from 'proper-lockfile';
 import type {AgentSession} from '../types/common.js';
 import type {NamedSessionResult} from '../named-session.js';
 
-type IncidentFacts = {id: string; project: string; sourceId?: string; consumerId?: string; hostId: string; signalType?: string; problemType?: string};
+type IncidentFacts = {id: string; project: string; sourceId?: string; consumerId?: string; hostId: string; signalType?: string; problemType?: string; service?: string};
 
 const PROBLEM_TYPE_ALIASES: Record<string, string[]> = {
   cpu: ['load', 'loadavg', 'cpu_load', 'cpu'],
@@ -34,7 +34,8 @@ function incidentFacts(message: string): IncidentFacts | undefined {
       const consumerId = typeof facts.consumer_id === 'string' && facts.consumer_id.trim() ? facts.consumer_id.trim() : undefined;
       const signalType = typeof facts.signal_type === 'string' && facts.signal_type.trim() ? facts.signal_type.trim() : undefined;
       const problemType = typeof facts.problem_type === 'string' && facts.problem_type.trim() ? facts.problem_type.trim() : undefined;
-      return {id: facts.id, project: facts.project.trim(), sourceId, consumerId, hostId: facts.host_id.trim(), signalType, problemType};
+      const service = typeof facts.service === 'string' && facts.service.trim() ? facts.service.trim() : undefined;
+      return {id: facts.id, project: facts.project.trim(), sourceId, consumerId, hostId: facts.host_id.trim(), signalType, problemType, service};
     } catch { /* Bounded telemetry, never executable instructions. */ }
   }
 }
@@ -44,8 +45,18 @@ export function incidentRequestId(message: string): string | undefined { return 
 export function incidentSourceKey(message: string): string | undefined {
   const facts = incidentFacts(message);
   if (facts) {
-    const consumer = facts.consumerId ?? facts.sourceId;
     const problem = canonicalProblemType(facts);
+    // A source that declares the shared service it observes owns one repair
+    // identity for that target: every observer of the same gateway joins the
+    // same repair session. The per-source evidence (source_id, host_id,
+    // correlation_id) stays in the delivered facts and in the incident group,
+    // so the source that reported stays the source that verifies.
+    if (facts.service) {
+      if (!problem || facts.service.length > 128 || problem.length > 256) return;
+      const identity = [facts.project, `service:${facts.service}`, problem];
+      return createHash('sha256').update(JSON.stringify(identity)).digest('hex');
+    }
+    const consumer = facts.consumerId ?? facts.sourceId;
     if (!consumer || !problem || [consumer, problem].some(value => value.length > 256)) return;
     const identity = [facts.project, consumer, facts.hostId, problem];
     return createHash('sha256').update(JSON.stringify(identity)).digest('hex');
