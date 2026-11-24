@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AnthropicMiniMaxSummarizer, CacheHandoffService, cacheWindowFor, continuationModelFor, movePinnedContinuation, semanticTranscript, unfinishedProbeDelayMs } from "../src/cache-handoff.js";
+import { AnthropicMiniMaxSummarizer, CacheHandoffService, cacheWindowFor, continuationModelFor, handoffUserEvidence, movePinnedContinuation, semanticTranscript, unfinishedProbeDelayMs } from "../src/cache-handoff.js";
 import { LineageStore } from "../src/lineage-store.js";
 import { getHumanStopStore } from "../src/human-stop-store.js";
 import type { AgentSession, HarnessAdapter, SessionMessageView } from "../src/types/index.js";
@@ -86,6 +86,46 @@ describe("cache-aware session handoff", () => {
     expect(result).toMatchObject({ kind: "rolled_over", session: { id: "new", model: "gpt-5.6-sol", cwd: "/repo" } });
     expect(fixture.createSession).toHaveBeenCalledWith(expect.objectContaining({ model: "gpt-5.6-sol", cwd: "/repo" }));
     expect(fixture.sendMessage).toHaveBeenCalledWith("new", expect.objectContaining({ message: expect.stringContaining("Цель: доделать") }));
+  });
+
+  it("preserves the original request and latest correction across a truncated cache handoff", async () => {
+    const user = (id: string, text: string): SessionMessageView => ({ id, role: "user", text, parts: [{ type: "text", text }] });
+    const first = user("original", "FIRST_ACCEPTANCE token=abcdefghijklmno");
+    const last = user("correction", "LATEST_CORRECTION");
+    const fixture = adapter([
+      { id: "noise", role: "assistant", text: "x".repeat(150_000), parts: [] },
+      last,
+    ]);
+    fixture.value.getFirstUserMessage = vi.fn(async () => first);
+    const summarize = vi.fn(async (_source: string) => "Исполнитель считает задачу закрытой.");
+    const service = new CacheHandoffService(new Map([["codex", fixture.value]]), { summarize });
+    const result = await service.maybeRollover(oldSession, new Date("2026-10-03T10:31:00Z"));
+    expect(result.kind).toBe("rolled_over");
+    const source = summarize.mock.calls[0][0];
+    expect(source.includes("FIRST_ACCEPTANCE")).toBe(true);
+    expect(source.includes("LATEST_CORRECTION")).toBe(true);
+    expect(source.length).toBeLessThanOrEqual(120_000);
+    expect(source.includes("abcdefghijklmno")).toBe(false);
+    for (const marker of ["codex:old", "FIRST_ACCEPTANCE", "LATEST_CORRECTION", "TRAZ"]) {
+      expect(fixture.sendMessage).toHaveBeenCalledWith("new", expect.objectContaining({ message: expect.stringContaining(marker) }));
+    }
+    expect(fixture.createSession).toHaveBeenCalledTimes(1);
+    expect(fixture.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("bounds user excerpts and excludes synthetic inputs and tool-only messages", () => {
+    const goal = "HEAD " + "x".repeat(8_000) + " TAIL";
+    const evidence = handoffUserEvidence([
+      { id: "first", role: "user", text: goal, parts: [] },
+      { id: "system-input", role: "user", nativeInputType: "synthetic", text: "RETRY", parts: [] },
+    ]);
+    expect(evidence).toContain("HEAD");
+    expect(evidence).toContain("TAIL");
+    expect(evidence).not.toContain("RETRY");
+    expect(evidence.length).toBeLessThan(2_100);
+    expect(handoffUserEvidence([{ id: "tool", role: "user", text: "private output", parts: [
+      { type: "tool_result", output: "private output" },
+    ] }])).toBe("");
   });
 
   it("does not create or send a cache replacement for a durably human-stopped source", async () => {

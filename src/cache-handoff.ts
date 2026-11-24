@@ -10,6 +10,21 @@ import { automationDisarmDecision, sessionWorkKey, AutomationDisarmStore } from 
 
 const MAX_SOURCE_CHARS = 120_000;
 const MAX_SUMMARY_CHARS = 16_000;
+const MAX_USER_EXCERPT_CHARS = 2_000;
+
+export const HANDOFF_SUMMARY_GUIDE = [
+  "Кратко опиши цель с учётом поправок пользователя, принятые решения, что осталось и следующий шаг.",
+  "Для проверяемого результата сохрани имеющуюся ссылку на файл, ревизию или квитанцию и укажи, кто сообщил результат.",
+  "Если видны только слова исполнителя, пометь вывод как гипотезу. Сохрани опровергнутые гипотезы и причину отказа от них.",
+].join(" ");
+
+export const HANDOFF_CONTINUATION_GUIDE = [
+  "Учитывай более поздние поправки пользователя. Начни с первого незакрытого условия приёмки. Для спорного результата открой указанное доказательство.",
+  "Если оно противоречит сводке или одна и та же ошибка повторилась после исправления, проведи один разбор TRAZ в свежем контексте только для чтения.",
+  "Передай туда цель, поправки пользователя, ссылку на доказательство и один вопрос. Если независимый контекст недоступен, сверь источник в текущей сессии.",
+  "Продолжай только оставшуюся работу. Истечение кеша само по себе разбора не требует.",
+].join(" ");
+
 const DEFAULT_MINIMAX_MODEL = "generic.minimax/MiniMax-M3.1-Flash";
 
 export interface CacheWindow {
@@ -80,7 +95,7 @@ export class AnthropicMiniMaxSummarizer implements SessionSummarizer {
         max_tokens: 2_048,
         system: "Сожми протухшую сессию разработки для новой frontier-модели. Не выполняй задачу и не добавляй факты.",
         messages: [{ role: "user", content: [
-          { type: "text", text: "Верни короткий русский handoff: цель, уже сделано, решения, важные файлы и проверки, незавершённое, риски, следующий шаг." },
+          { type: "text", text: HANDOFF_SUMMARY_GUIDE },
           { type: "text", text: source },
         ] }],
       }),
@@ -124,19 +139,38 @@ export function unfinishedProbeDelayMs(session: Pick<AgentSession, "harness" | "
   return Math.max(60_000, Math.min(maxDelay, cache.ttlMs - safetyMargin));
 }
 
+function semanticRow(message: SessionMessageView): string {
+  if (message.role !== "user" && message.role !== "assistant") return "";
+  const text = message.parts
+    .filter((part) => part.type === "text")
+    .map((part) => stripReasoning(part.text || ""))
+    .filter(Boolean)
+    .join("\n") || (message.parts.length ? "" : stripReasoning(message.text || ""));
+  return text ? `${message.role === "user" ? "ПОЛЬЗОВАТЕЛЬ" : "АГЕНТ"}: ${redactSecrets(text)}` : "";
+}
+
 /** Text sent to MiniMax: user/assistant semantics only, never tools or private reasoning. */
 export function semanticTranscript(messages: SessionMessageView[]): string {
-  const rows: string[] = [];
-  for (const message of messages) {
-    if (message.role !== "user" && message.role !== "assistant") continue;
-    const text = message.parts
-      .filter((part) => part.type === "text")
-      .map((part) => stripReasoning(part.text || ""))
-      .filter(Boolean)
-      .join("\n") || stripReasoning(message.text || "");
-    if (text.trim()) rows.push(`${message.role === "user" ? "ПОЛЬЗОВАТЕЛЬ" : "АГЕНТ"}: ${redactSecrets(text.trim())}`);
-  }
-  return rows.join("\n\n").slice(-MAX_SOURCE_CHARS);
+  return messages.map(semanticRow).filter(Boolean).join("\n\n").slice(-MAX_SOURCE_CHARS);
+}
+
+function userExcerpt(message?: SessionMessageView | null): string {
+  if (message?.role !== "user" || message.nativeInputType === "synthetic") return "";
+  const row = semanticRow(message);
+  if (row.length <= MAX_USER_EXCERPT_CHARS) return row;
+  const half = Math.floor((MAX_USER_EXCERPT_CHARS - 5) / 2);
+  return `${row.slice(0, half)}\n[…]\n${row.slice(-half)}`;
+}
+
+/** Quote user messages directly so an inaccurate summary cannot erase the task. */
+export function handoffUserEvidence(messages: SessionMessageView[], first?: SessionMessageView | null): string {
+  const human = messages.filter((message) => message.role === "user" && message.nativeInputType !== "synthetic");
+  const opening = userExcerpt(first) || userExcerpt(human[0]);
+  const latest = userExcerpt(human.at(-1));
+  return [
+    opening && `Ранняя доступная реплика пользователя:\n${opening}`,
+    latest && latest !== opening && `Более поздняя реплика пользователя:\n${latest}`,
+  ].filter(Boolean).join("\n\n");
 }
 
 function messageText(message: SessionMessageView): string {
@@ -191,8 +225,15 @@ export class CacheHandoffService {
       operationId = durableAdmission.admission.operationId;
       admissionRecord = durableAdmission.record;
     } else {
-      const messages = await adapter.getSessionMessages(session.id, 1_000);
-      const source = semanticTranscript(messages || []);
+      const [messages, first] = await Promise.all([
+        adapter.getSessionMessages(session.id, 1_000),
+        adapter.getFirstUserMessage?.(session.id).catch(() => null),
+      ]);
+      const tail = semanticTranscript(messages ?? []);
+      const userEvidence = handoffUserEvidence(messages ?? [], first);
+      const source = userEvidence
+        ? `${userEvidence}\n\n${tail.slice(-(MAX_SOURCE_CHARS - userEvidence.length - 2))}`
+        : tail;
       if (!source) throw new Error("в сессии нет пользовательского контекста для handoff");
       const summary = (await this.summarizer.summarize(source)).trim().slice(0, MAX_SUMMARY_CHARS);
       if (!summary) throw new Error("MiniMax вернул пустой handoff");
@@ -216,7 +257,7 @@ export class CacheHandoffService {
         const selected = await adapter.changeModel(created.id, continuationModel);
         if (!selected.ok) throw new Error(selected.error || `не удалось выбрать модель продолжения ${continuationModel}`);
       }
-      prompt = handoffPrompt(summary);
+      prompt = handoffPrompt(summary, userEvidence, sourceKey);
       operationId = randomUUID();
       admissionRecord = {
         sessionKey: `${session.harness}:${created.id}`,
@@ -348,7 +389,7 @@ export class FastAgentMiniMaxSummarizer implements SessionSummarizer {
     try {
       const prompt = [
         "Ты сжимаешь протухшую сессию разработки для новой frontier-модели.",
-        "Верни только короткий русский handoff: цель, уже сделано, решения, важные файлы/команды, проверки, незавершённое, риски, следующий шаг.",
+        HANDOFF_SUMMARY_GUIDE,
         "Не пересказывай ход рассуждений. Не добавляй факты. Не выполняй задачу. Tool calls уже удалены.",
         "\nСЕССИЯ:\n", source,
       ].join("\n");
@@ -365,11 +406,13 @@ export class FastAgentMiniMaxSummarizer implements SessionSummarizer {
   }
 }
 
-function handoffPrompt(summary: string): string {
+function handoffPrompt(summary: string, userEvidence: string, sourceKey: string): string {
   return [
     "Это новая сессия, созданная после истечения провайдерского prompt cache старой сессии.",
-    "Ниже — семантический handoff, подготовленный MiniMax без tool calls и скрытых рассуждений.",
-    "Проверь текущее состояние файлов и продолжи незавершённую работу; не повторяй уже подтверждённое.",
+    `Исходная сессия: ${sourceKey}.`,
+    "Сводка MiniMax составлена по тексту переписки. Результаты инструментов в неё не передавались.",
+    HANDOFF_CONTINUATION_GUIDE,
+    userEvidence,
     "\n--- HANDOFF ---\n", summary,
   ].join("\n");
 }
