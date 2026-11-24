@@ -209,6 +209,10 @@ describe("unfinished session crash recovery", () => {
         await launcher.runAutopilotCycle();
         expect(calls.resumes.sort()).toEqual(["zcode-1", "zcode-2"]);
         expect(calls.messages.map(({ id }) => id).sort()).toEqual(["zcode-1", "zcode-2"]);
+        for (const { id, message } of calls.messages) {
+            expect(message).toContain(`ПОЛЬЗОВАТЕЛЬ: finish ${id}`);
+            expect(message).toContain("TRAZ");
+        }
     });
     it("does not inventory or resume Codex when the durable Autopilot policy selects only ZCode", async () => {
         const root = await mkdtemp(join(tmpdir(), "semantic-zcode-only-"));

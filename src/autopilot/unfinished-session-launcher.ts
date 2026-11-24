@@ -26,7 +26,7 @@ import lockfile from "proper-lockfile";
 import type { AgentSession, HarnessAdapter, HarnessEvent, HarnessType, SendMessageResult, SessionMessageView, SessionSnapshotReceipt } from "../types/index.js";
 import { localSessionHostId } from "../types/index.js";
 import type { HumanStopStore } from "../human-stop-store.js";
-import { cacheWindowFor, continuationModelFor, movePinnedContinuation, semanticTranscript, unfinishedProbeDelayMs, type CacheHandoffService } from "../cache-handoff.js";
+import { cacheWindowFor, continuationModelFor, HANDOFF_CONTINUATION_GUIDE, HANDOFF_SUMMARY_GUIDE, handoffUserEvidence, movePinnedContinuation, semanticTranscript, unfinishedProbeDelayMs, type CacheHandoffService } from "../cache-handoff.js";
 import { deferredMessages, isBusyCodexWriter, type DeferredMessageStore } from "../deferred-messages.js";
 import { effectivePolicyAllowsTarget, type EffectivePolicy } from "./policy.js";
 import type { AutopilotPolicyStore } from "./policy-store.js";
@@ -1255,6 +1255,7 @@ export interface SessionBatchReconciliation {
 }
 
 type AssessedSession = SessionBatchCandidate & {
+  userEvidence?: string;
   adapter: HarnessAdapter;
   sourceKey: string;
   autoResumeEnabled: boolean;
@@ -4971,6 +4972,7 @@ export class UnfinishedSessionLauncher {
         if (cohortAwake || actionable) assessed.push({
           adapter, session, sourceKey, autoResumeEnabled, urgentSignalVersions, transcriptTail,
           humanMessages: styleObservations(session, messages),
+          userEvidence: handoffUserEvidence(messages),
           ...(latestSemanticMessage ? {
             latestSemanticMessage: { role: latestSemanticMessage.role, text: latestSemanticMessage.text },
           } : {}),
@@ -5293,7 +5295,7 @@ export class UnfinishedSessionLauncher {
         continue;
       }
 
-      const handoff = batchContinuationPrompt(group, sources);
+      const handoff = batchContinuationPrompt(group, sources, primary.userEvidence);
       if (running) {
         if (await this.suppressIfHumanStopped(running.session.harness, running.session.id, sessionWorkspaceIdentity(running.session), running.session)) continue;
         if (!this.lifecycleActive(lifecycleEpoch)) return;
@@ -7091,16 +7093,17 @@ export function enforcePlanWorkspaceBoundaries(
   };
 }
 
-function batchContinuationPrompt(group: SessionBatchPlanGroup, sources: AssessedSession[]): string {
+function batchContinuationPrompt(group: SessionBatchPlanGroup, sources: AssessedSession[], userEvidence = ""): string {
   return [
     continuationTitle(group.topic),
     "",
     `Это единое продолжение задачи «${group.topic}», собранное оркестратором из ${sources.length} сесс. Codex/ZCode.`,
     `Исходные сессии: ${sources.map(({ session }) => `${session.harness}:${session.id} (${session.title})`).join("; ")}.`,
-    "MiniMax прочитал первый пользовательский запрос и свежий смысловой хвост каждой сессии, убрал дубли и подготовил общий handoff.",
+    "Сводка MiniMax составлена по тексту переписки исходных сессий.",
+    userEvidence,
     "\n--- ОБЪЕДИНЁННЫЙ HANDOFF ---\n",
     group.handoff,
-    "\nПроверь текущее состояние файлов и сервисов, затем продолжи с незавершённого шага. Не повторяй уже подтверждённое.",
+    HANDOFF_CONTINUATION_GUIDE,
   ].join("\n");
 }
 
@@ -7986,7 +7989,8 @@ function batchPlannerPrompt(): string {
     "completed допустим только когда исходная пользовательская цель явно достигнута и финальный ответ содержит проверяемый результат; обещание продолжить, незавершённые пункты или ошибки инструментов означают unfinished.",
     REQUESTED_ARTIFACT_COMPLETION_RULE,
     "topic — понятная русская тема из 3-8 слов без UUID, Auto Continue и технического мусора.",
-    "handoff для unfinished — единая краткая сводка всех сессий группы: цель, уже сделано, решения, файлы/проверки, осталось, риски, следующий шаг.",
+    "В поле handoff для unfinished собери одну сводку по группе.",
+    HANDOFF_SUMMARY_GUIDE,
     "Не выполняй задачи и не добавляй факты. Верни только JSON {groups:[{source_session_ids,primary_session_id,verdict,reason,confidence,topic,handoff}],predicted_user_request:string,user_style_update?:string}. Прогноз и обновление стиля относятся ко всему ответу; handoff каждой группы сохраняет только её собственную задачу.",
   ].join(" ");
 }
