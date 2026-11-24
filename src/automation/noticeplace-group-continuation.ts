@@ -41,9 +41,25 @@ export function noticeplaceGroupContinuationPorts(store: AutopilotSessionStore):
       if (!requestedId) return 'blocked';
       const incoming = requestedId === current.id ? current : await read(requestedId);
       const sameGroup = (a: Document, b: Document) => Boolean(a.lifecycle?.group_key && a.lifecycle.group_key === b.lifecycle?.group_key);
+      /**
+       * The repair identity of one shared target.
+       *
+       * Two observers of the same shared service repair it together even
+       * though their incident groups stay per-host: the group key keeps the
+       * exact source ownership, and the declared service names the target that
+       * is actually being repaired.
+       */
+      const sameRepairGroup = (a: Document, b: Document) => {
+        if (sameGroup(a, b)) return true;
+        if (a.project !== b.project) return false;
+        const left = a.lifecycle?.group, right = b.lifecycle?.group;
+        const service = typeof left?.service === 'string' ? left.service.trim() : '';
+        if (!service || service !== (typeof right?.service === 'string' ? right.service.trim() : '')) return false;
+        return left?.problem_type === right?.problem_type;
+      };
       const requestGroup = incidentSourceKey(request.message);
       const incomingGroup = incoming.lifecycle?.group && incidentSourceKey(JSON.stringify({ ...incoming.lifecycle.group, id: incoming.id, project: incoming.project }));
-      if (!sameGroup(current, incoming) || !requestGroup || requestGroup !== incomingGroup) return 'blocked';
+      if (!sameRepairGroup(current, incoming) || !requestGroup || requestGroup !== incomingGroup) return 'blocked';
       const continuation = current.lifecycle?.continuation;
       if (!continuation) {
         // An ordinary new episode has never belonged to this finished attempt.
@@ -58,7 +74,7 @@ export function noticeplaceGroupContinuationPorts(store: AutopilotSessionStore):
         || !Number.isInteger(continuation.generation)) return 'blocked';
       const origin = continuation.incident_id === current.id ? current : await read(continuation.incident_id);
       const authority = origin.lifecycle?.continuation;
-      if (!OPEN.includes(origin.state) || !sameGroup(current, origin) || !authority
+      if (!OPEN.includes(origin.state) || !sameRepairGroup(current, origin) || !authority
         || keys.some(key => authority[key] !== continuation[key])
         || origin.lifecycle?.attempt_id !== attempt.attemptId || origin.lifecycle?.session_id !== session.id
         || origin.lifecycle?.harness !== session.harness) return 'blocked';
