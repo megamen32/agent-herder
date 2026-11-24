@@ -19,7 +19,7 @@ import type { HarnessAdapter, HarnessType } from "../types/common.js";
 import { newOrResumeNamedSession, type NamedSessionMode, type NamedSessionResult } from "../named-session.js";
 import { HUMAN_STOP_MESSAGE } from "../human-stop-actions.js";
 import { MINIMAX_SUBSCRIPTION_MODEL, type MiniMaxQuotaPreflight } from "./minimax-quota-preflight.js";
-import { NOTICEPLACE_HEALTH_AUTHORIZED, validateNoticeplaceHealthLaunch } from "./noticeplace-health-launch.js";
+import { NOTICEPLACE_HEALTH_AUTHORIZED, healthRepairModel, validateNoticeplaceHealthLaunch } from "./noticeplace-health-launch.js";
 import { MODEL_NOT_PERMITTED_CODE, ModelNotPermittedError } from "../project-model-policy.js";
 import { assertModelAllowedForDirectory, assertModelAllowedForProjectRoute } from "../project-model-gate.js";
 import { healthModelForHarness, INCIDENT_EXECUTION } from "../health-remediation.js";
@@ -306,9 +306,13 @@ export async function dispatchProjectLaunch(
   // A health request selects only the allowed OpenCode entry; it never walks
   // the ordinary fallback chain. The original policy remains unchanged.
   const incidentDefault = healthModelForHarness("opencode", input.policy.incidentExecution ?? INCIDENT_EXECUTION);
+  // The health repair of a shared gateway must not run on that gateway. The
+  // signed health project identity selects the verified independent provider;
+  // every other health project and every ordinary launch keeps its own route.
+  const healthModel = input.model ?? healthRepairModel(input.project) ?? healthRepairModel(project);
   const resolutionPolicy = healthAnalysis
-    ? { ...input.policy, models: { ...input.policy.models, opencode: input.model ?? incidentDefault },
-        ...(healthRouteMatch && healthRoute ? { projectRoutes: { ...input.policy.projectRoutes, [healthRouteMatch.routeKey]: { ...healthRoute, harnesses: ["opencode" as const], ...(input.model ? { models: { ...healthRoute.models, opencode: input.model } } : {}) } } } : {}) }
+    ? { ...input.policy, models: { ...input.policy.models, opencode: healthModel ?? incidentDefault },
+        ...(healthRouteMatch && healthRoute ? { projectRoutes: { ...input.policy.projectRoutes, [healthRouteMatch.routeKey]: { ...healthRoute, harnesses: ["opencode" as const], ...(healthModel ? { models: { ...healthRoute.models, opencode: healthModel } } : {}) } } } : {}) }
     : input.policy;
   const resolution = resolveProjectLaunch(resolutionPolicy, {
     project,
@@ -364,7 +368,7 @@ export async function dispatchProjectLaunch(
     // A configured project is authoritative: the route decides harness, model
     // and workspace. A profile value is reported as overridden, never rejected.
     harness = resolution.harness;
-    model = healthAnalysis ? input.model ?? resolution.model : resolution.model;
+    model = healthAnalysis ? healthModel ?? resolution.model : resolution.model;
     // Check the selected model against the original policy before reservation.
     if (healthAnalysis && model) {
       try {
