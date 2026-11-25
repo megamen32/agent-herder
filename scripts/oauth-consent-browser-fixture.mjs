@@ -57,7 +57,7 @@ try {
   });
   issuerServer = createServer(async (request, response) => {
     if (!await handleMcpOAuthRequest(request, response, {
-      store, issuer, resource: issuer + "/mcp", redirectUri,
+      store, issuer, resource: issuer + "/mcp",
     })) { response.statusCode = 404; response.end(); }
   });
   await Promise.all([issuerServer, callbackServer].map(server =>
@@ -101,7 +101,7 @@ try {
   assert.equal(consent.headers()["referrer-policy"], "no-referrer");
   assert.equal(consent.headers().location, undefined);
   assert.equal(callbackCount, 0);
-  const link = page.getByRole("link", { name: "Вернуться в ChatGPT" });
+  const link = page.getByRole("link", { name: "Вернуться в приложение" });
   assert.equal(await link.getAttribute("rel"), "noreferrer");
   const href = new URL(await link.getAttribute("href"));
   assert.equal(href.origin + href.pathname, redirectUri);
