@@ -31,6 +31,10 @@ def read_bearer(path):
     return words[0]
 
 
+class ReadinessFailure(ValueError):
+    """Only local method names, numeric statuses and fixed reason codes may be logged."""
+
+
 def activate(connection, bearer):
     headers = {"Authorization": "Bearer " + bearer, "Content-Type": "application/json",
                "Accept": "application/json, text/event-stream"}
@@ -45,14 +49,22 @@ def activate(connection, bearer):
             headers["Mcp-Session-Id"] = session_id
         body = response.read(MAX_RESPONSE_BYTES + 1)
         if response.status not in (200, 202, 204) or len(body) > MAX_RESPONSE_BYTES:
-            raise ValueError(f"{method} refused or exceeded the read limit (HTTP {response.status})")
+            raise ReadinessFailure(f"{method} refused or exceeded the read limit (HTTP {response.status})")
         if request_id is None:
             return None
         if "text/event-stream" in response.getheader("Content-Type", ""):
             body = b"\n".join(line[5:].strip() for line in body.splitlines() if line.startswith(b"data:"))
-        reply = json.loads(body)
-        if reply.get("id") != request_id or not isinstance(reply.get("result"), dict):
-            raise ValueError(f"{method} returned no matching MCP result")
+        try:
+            reply = json.loads(body)
+        except ValueError:
+            raise ReadinessFailure(f"{method} returned invalid JSON") from None
+        if not isinstance(reply, dict) or reply.get("id") != request_id:
+            raise ReadinessFailure(f"{method} returned no matching MCP reply")
+        if not isinstance(reply.get("result"), dict):
+            error = reply.get("error")
+            code = error.get("code") if isinstance(error, dict) else None
+            suffix = f" (RPC {code})" if type(code) is int and -32768 <= code <= 32767 else ""
+            raise ReadinessFailure(f"{method} returned no MCP result{suffix}")
         return reply["result"]
 
     initialized = rpc("initialize", {
@@ -60,19 +72,22 @@ def activate(connection, bearer):
         "clientInfo": {"name": "agent-herder-boot-readiness", "version": "1"},
     }, 1)
     if not initialized.get("protocolVersion"):
-        raise ValueError("missing negotiated MCP protocol")
+        raise ReadinessFailure("missing negotiated MCP protocol")
     headers["MCP-Protocol-Version"] = initialized["protocolVersion"]
     rpc("notifications/initialized", {})
     catalog = rpc("tools/list", {}, 2)
     names = {tool["name"] for tool in catalog["tools"]}
     if not {"discover", "session", "stop"} <= names:
-        raise ValueError("registered Rust MCP catalog unavailable")
+        raise ReadinessFailure("tools/list is missing required Rust tools")
 
 
 def main():
     connection = http.client.HTTPConnection("127.0.0.1", 9001, timeout=7)
     try:
         activate(connection, read_bearer(ENV_FILE))
+    except ReadinessFailure as reason:
+        print(f"Registered Agent Herder MCP is not ready: {reason}", file=sys.stderr)
+        return 1
     except (OSError, ValueError, KeyError, TypeError, AttributeError, http.client.HTTPException):
         print("Registered Agent Herder MCP is not ready", file=sys.stderr)
         return 1
