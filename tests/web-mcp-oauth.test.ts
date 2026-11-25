@@ -57,9 +57,16 @@ describe("ChatGPT MCP OAuth HTTP flow", () => {
     });
     expect(registration.status).toBe(201);
     const client = await registration.json() as { client_id: string };
+    const claudeRedirect = "https://claude.ai/api/mcp/auth_callback";
+    const claudeRegistration = await fetch(`${origin}/oauth/register`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_name: "Claude custom MCP", redirect_uris: [claudeRedirect], token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"] }),
+    });
+    expect(claudeRegistration.status).toBe(201);
+    expect((await claudeRegistration.json()).redirect_uris).toEqual([claudeRedirect]);
     const rejectedRegistration = await fetch(`${origin}/oauth/register`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ redirect_uris: ["https://attacker.example/callback"] }),
+      body: JSON.stringify({ redirect_uris: ["javascript:alert(1)"] }),
     });
     expect(rejectedRegistration.status).toBe(400);
 
