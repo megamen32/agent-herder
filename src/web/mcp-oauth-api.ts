@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { isMcpConnectionOwnerRequest } from "./fleet-wiring.js";
 import {
-  CHATGPT_REDIRECT_URI, MCP_OAUTH_AS_METADATA_PATH, MCP_OAUTH_AUTHORIZE_PATH,
+  MCP_OAUTH_AS_METADATA_PATH, MCP_OAUTH_AUTHORIZE_PATH,
   MCP_OAUTH_CONSENT_PATH, MCP_OAUTH_ISSUER, MCP_OAUTH_PRM_PATH,
   MCP_OAUTH_REGISTER_PATH, MCP_OAUTH_RESOURCE, MCP_OAUTH_REVOKE_PATH,
   MCP_OAUTH_TOKEN_PATH,
@@ -16,7 +16,6 @@ const MAX_BODY_BYTES = 12 * 1024;
 type OAuthOptions = {
   issuer?: string;
   resource?: string;
-  redirectUri?: string;
   store?: McpOAuthTokenStore;
   isOwnerRequest?: (request: IncomingMessage) => Promise<boolean>;
   ownerSubject?: string;
@@ -30,7 +29,6 @@ export async function handleMcpOAuthRequest(request: IncomingMessage, response: 
   if (!paths.includes(url.pathname)) return false;
   const issuer = options.issuer ?? MCP_OAUTH_ISSUER;
   const resource = options.resource ?? MCP_OAUTH_RESOURCE;
-  const redirectUri = options.redirectUri ?? CHATGPT_REDIRECT_URI;
   const store = options.store ?? getDefaultMcpOAuthTokenStore();
   response.setHeader("Cache-Control", "no-store, private");
   response.setHeader("Pragma", "no-cache");
@@ -60,12 +58,12 @@ export async function handleMcpOAuthRequest(request: IncomingMessage, response: 
     });
   }
   if (url.pathname === MCP_OAUTH_AUTHORIZE_PATH && request.method === "GET") {
-    return authorize(request, response, url, { issuer, resource, redirectUri, store, isOwnerRequest: options.isOwnerRequest ?? isMcpConnectionOwnerRequest });
+    return authorize(request, response, url, { issuer, resource, store, isOwnerRequest: options.isOwnerRequest ?? isMcpConnectionOwnerRequest });
   }
   if (url.pathname === MCP_OAUTH_CONSENT_PATH && request.method === "POST") {
-    return consent(request, response, { issuer, redirectUri, store, isOwnerRequest: options.isOwnerRequest ?? isMcpConnectionOwnerRequest, ownerSubject: options.ownerSubject ?? "agent-herder-owner" });
+    return consent(request, response, { issuer, store, isOwnerRequest: options.isOwnerRequest ?? isMcpConnectionOwnerRequest, ownerSubject: options.ownerSubject ?? "agent-herder-owner" });
   }
-  if (url.pathname === MCP_OAUTH_REGISTER_PATH && request.method === "POST") return register(request, response, { store, redirectUri });
+  if (url.pathname === MCP_OAUTH_REGISTER_PATH && request.method === "POST") return register(request, response, { store });
   if (url.pathname === MCP_OAUTH_TOKEN_PATH && request.method === "POST") return token(request, response, { issuer, resource, store });
   if (url.pathname === MCP_OAUTH_REVOKE_PATH && request.method === "POST") return revoke(request, response, store);
   response.setHeader("Allow", url.pathname === MCP_OAUTH_AUTHORIZE_PATH || url.pathname === MCP_OAUTH_PRM_PATH || url.pathname === MCP_OAUTH_AS_METADATA_PATH ? "GET" : "POST");
@@ -73,13 +71,13 @@ export async function handleMcpOAuthRequest(request: IncomingMessage, response: 
 }
 
 async function authorize(request: IncomingMessage, response: ServerResponse, url: URL, options: {
-  issuer: string; resource: string; redirectUri: string; store: McpOAuthTokenStore; isOwnerRequest: (request: IncomingMessage) => Promise<boolean>;
+  issuer: string; resource: string; store: McpOAuthTokenStore; isOwnerRequest: (request: IncomingMessage) => Promise<boolean>;
 }): Promise<true> {
   const clientId = one(url.searchParams, "client_id");
   const callback = one(url.searchParams, "redirect_uri");
   const state = one(url.searchParams, "state");
   const client = clientId ? await options.store.getClient(clientId) : undefined;
-  if (!client || callback !== options.redirectUri || callback !== client.redirectUri) return json(response, 400, { error: "invalid_client" });
+  if (!client || !callback || callback !== client.redirectUri) return json(response, 400, { error: "invalid_client" });
   if (!state || state.length > 2048) return authorizationError(response, options.issuer, callback, "", "invalid_request");
   if (one(url.searchParams, "response_type") !== "code") return authorizationError(response, options.issuer, callback, state, "unsupported_response_type");
   const challenge = one(url.searchParams, "code_challenge");
@@ -109,7 +107,7 @@ async function authorize(request: IncomingMessage, response: ServerResponse, url
 }
 
 async function consent(request: IncomingMessage, response: ServerResponse, options: {
-  issuer: string; redirectUri: string; store: McpOAuthTokenStore; isOwnerRequest: (request: IncomingMessage) => Promise<boolean>; ownerSubject: string;
+  issuer: string; store: McpOAuthTokenStore; isOwnerRequest: (request: IncomingMessage) => Promise<boolean>; ownerSubject: string;
 }): Promise<true> {
   if (!await options.isOwnerRequest(request)) return json(response, 401, { error: "owner_sso_required" });
   if (!/^application\/x-www-form-urlencoded(?:\s*;|$)/i.test(request.headers["content-type"] ?? "")) return json(response, 415, { error: "form_urlencoded_required" });
@@ -120,7 +118,7 @@ async function consent(request: IncomingMessage, response: ServerResponse, optio
   const clientId = one(form, "client_id");
   const redirectUri = one(form, "redirect_uri");
   const state = one(form, "state");
-  if (!transaction || !clientId || redirectUri !== options.redirectUri || !state) return json(response, 400, { error: "invalid_request" });
+  if (!transaction || !clientId || !validRedirectUri(redirectUri) || !state) return json(response, 400, { error: "invalid_request" });
   try {
     const code = await options.store.approveAuthorizationTransaction({ transaction, clientId, redirectUri, state, subject: options.ownerSubject });
     const callback = new URL(redirectUri);
@@ -137,13 +135,24 @@ async function consent(request: IncomingMessage, response: ServerResponse, optio
   }
 }
 
-async function register(request: IncomingMessage, response: ServerResponse, options: { store: McpOAuthTokenStore; redirectUri: string }): Promise<true> {
+/** Dynamic registration accepts any valid HTTPS callback. The user consent page remains the authorization gate. */
+function validRedirectUri(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0 || value.length > 4096 || /[\u0000-\u001f\u007f]/u.test(value)) return false;
+  let url: URL;
+  try { url = new URL(value); }
+  catch { return false; }
+  if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.hash) return false;
+  return url.protocol === 'https:' || ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+}
+
+async function register(request: IncomingMessage, response: ServerResponse, options: { store: McpOAuthTokenStore }): Promise<true> {
   if (!/^application\/json(?:\s*;|$)/i.test(request.headers["content-type"] ?? "")) return json(response, 415, { error: "application_json_required" });
   let body: Record<string, unknown>;
   try { body = JSON.parse((await readBody(request)).toString("utf8")) as Record<string, unknown>; }
   catch (error) { return json(response, (error as Error).message === "body_too_large" ? 413 : 400, { error: "invalid_client_metadata" }); }
-  if (!body || typeof body !== "object" || Array.isArray(body) || !Array.isArray(body.redirect_uris)
-    || body.redirect_uris.length !== 1 || body.redirect_uris[0] !== options.redirectUri
+  const redirectUri = body && typeof body === "object" && !Array.isArray(body) && Array.isArray(body.redirect_uris) && body.redirect_uris.length === 1
+    ? body.redirect_uris[0] : undefined;
+  if (!validRedirectUri(redirectUri)
     || (body.token_endpoint_auth_method !== undefined && body.token_endpoint_auth_method !== "none")
     || (body.grant_types !== undefined && (!Array.isArray(body.grant_types) || body.grant_types.length !== 2
       || !body.grant_types.includes("authorization_code") || !body.grant_types.includes("refresh_token")))
@@ -152,9 +161,9 @@ async function register(request: IncomingMessage, response: ServerResponse, opti
     return json(response, 400, { error: "invalid_client_metadata" });
   }
   const requestedName = typeof body.client_name === "string" ? body.client_name.trim().replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 80) : "";
-  const clientName = requestedName || "ChatGPT custom MCP";
+  const clientName = requestedName || new URL(redirectUri).host;
   try {
-    const client = await options.store.registerClient(clientName, options.redirectUri);
+    const client = await options.store.registerClient(clientName, redirectUri);
     return json(response, 201, {
       client_id: client.clientId,
       client_id_issued_at: Math.floor(Date.parse(client.createdAt) / 1000),
@@ -245,11 +254,11 @@ function consentPage(input: { clientName: string; clientId: string; callback: st
     const value = key === "transaction" ? input.transaction : key === "client_id" ? input.clientId : key === "redirect_uri" ? input.callback : input.state;
     return `<input type="hidden" name="${key}" value="${escapeHtml(value)}">`;
   }).join("");
-  return `<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Доступ к Agent Herder MCP</title><body><main><h1>Подключить Agent Herder</h1><p><strong>${name}</strong> запрашивает доступ к Agent Herder MCP.</p><p>Подключение получит полные текущие права владельца MCP — тот же набор операций, что у существующих owner Bearer клиентов, включая чтение сессий. Access token истекает через 15 минут; refresh token действует 30 дней и меняется при каждом обновлении. Доступ можно отозвать.</p><p>Запрошено: <code>${escapeHtml(input.scopes.join(" "))}</code></p><form method="post" action="${MCP_OAUTH_CONSENT_PATH}">${fields}<button type="submit">Разрешить подключение</button></form><p>Если вы не начинали подключение, закройте эту страницу.</p></main></body></html>`;
+  return `<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Доступ к Agent Herder MCP</title><body><main><h1>Подключить Agent Herder</h1><p><strong>${name}</strong> запрашивает доступ к Agent Herder MCP.</p><p>После подтверждения код получит <strong>${escapeHtml(new URL(input.callback).origin)}</strong>.</p><p>Подключение получит полные текущие права владельца MCP — тот же набор операций, что у существующих owner Bearer клиентов, включая чтение сессий. Access token истекает через 15 минут; refresh token действует 30 дней и меняется при каждом обновлении. Доступ можно отозвать.</p><p>Запрошено: <code>${escapeHtml(input.scopes.join(" "))}</code></p><form method="post" action="${MCP_OAUTH_CONSENT_PATH}">${fields}<button type="submit">Разрешить подключение</button></form><p>Если вы не начинали подключение, закройте эту страницу.</p></main></body></html>`;
 }
 
 function consentCompletePage(callback: string): string {
-  return `<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Завершить подключение Agent Herder</title><body><main><h1>Доступ разрешён</h1><p>Завершите подключение, вернувшись в ChatGPT.</p><p><a href="${escapeHtml(callback)}" rel="noreferrer">Вернуться в ChatGPT</a></p><p>Ссылка действует 2 минуты. Если она истекла, начните подключение заново в ChatGPT.</p></main></body></html>`;
+  return `<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Завершить подключение Agent Herder</title><body><main><h1>Доступ разрешён</h1><p>Код подключения получит <strong>${escapeHtml(new URL(callback).origin)}</strong>.</p><p><a href="${escapeHtml(callback)}" rel="noreferrer">Вернуться в приложение</a></p><p>Ссылка действует 2 минуты. Если она истекла, начните подключение заново в приложении.</p></main></body></html>`;
 }
 
 function one(params: URLSearchParams, key: string): string | undefined {

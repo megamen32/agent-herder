@@ -418,19 +418,36 @@ impl<'a> RecoveryHistory<'a> {
     ) -> Result<Option<RecoveryAttempt>, GateError> {
         let mut stage = RecoveryStage::Primary;
         for delivery in deliveries {
-            if matches!(
-                delivery.state,
-                DeliveryState::Uncertain | DeliveryState::Admitted
-            ) {
+            let current_key = self.is_current(self.suffix(delivery));
+            if (delivery.state == DeliveryState::Claimed
+                || delivery.phase.as_deref() == Some("handing_off"))
+                && !current_key
+            {
+                return Ok(None);
+            }
+            if delivery.state == DeliveryState::Admitted {
                 return Ok(None);
             }
             if !delivery.matches_boundary {
                 continue;
             }
-            if stage == RecoveryStage::Fallback
-                || delivery.state != DeliveryState::Settled
-                || !self.exact_receipt(db, delivery)?
-            {
+            if stage == RecoveryStage::Fallback {
+                return Ok(None);
+            }
+            if delivery.state != DeliveryState::Settled {
+                if matches!(
+                    delivery.state,
+                    DeliveryState::Prepared
+                        | DeliveryState::DefinitelyNotSent
+                ) {
+                    continue;
+                }
+                if delivery.state == DeliveryState::Uncertain {
+                    continue;
+                }
+                return Ok(None);
+            }
+            if !self.exact_receipt(db, delivery)? {
                 return Ok(None);
             }
             match parse_suffix(self.suffix(delivery)) {
@@ -477,7 +494,13 @@ impl<'a> RecoveryHistory<'a> {
                         DeliveryState::Claimed
                             | DeliveryState::Prepared
                             | DeliveryState::DefinitelyNotSent
+                            | DeliveryState::Uncertain
                     ) {
+                        return Ok(None);
+                    }
+                    if delivery.state == DeliveryState::Uncertain
+                        && delivery.phase.as_deref() == Some("handing_off")
+                    {
                         return Ok(None);
                     }
                 }
@@ -489,7 +512,13 @@ impl<'a> RecoveryHistory<'a> {
 
         let (retry, claimed) = match current {
             None => ("0".into(), false),
-            Some((retry, row)) if row.state == DeliveryState::DefinitelyNotSent => {
+            Some((retry, row))
+                if matches!(
+                    row.state,
+                    DeliveryState::DefinitelyNotSent
+                        | DeliveryState::Uncertain
+                ) =>
+            {
                 (increment_retry(&retry), false)
             }
             Some((retry, row)) => (retry, row.state == DeliveryState::Claimed),
@@ -762,13 +791,11 @@ mod tests {
     }
 
     #[test]
-    fn absent_or_mismatching_receipts_block_but_technical_interruptions_continue() {
+    fn technical_failures_continue_without_waiting_for_receipts() {
         let retry = boundary("retry-turn", "retry-input");
         for (state, phase, id) in [
             ("unknown", "finished", None),
             ("unknown", "finished", Some("retry-turn")),
-            ("dispatching", "handing_off", Some("retry-turn")),
-            ("admitted", "finished", Some("retry-input")),
             ("admitted", "finished", None),
         ] {
             let fixture = Fixture::new();
@@ -780,14 +807,30 @@ mod tests {
                 phase,
                 false,
             );
-            assert!(
-                fixture
-                    .history("codex", RETRY, &retry)
-                    .next_attempt(&mut fixture.db(), SCOPE, NOW)
-                    .unwrap()
-                    .is_none(),
-                "{state} {id:?}"
+            let attempt = fixture
+                .history("codex", RETRY, &retry)
+                .next_attempt(&mut fixture.db(), SCOPE, NOW)
+                .unwrap();
+            assert!(attempt.is_some(), "{state} {id:?}");
+        }
+        for (state, phase, id) in [
+            ("dispatching", "handing_off", Some("retry-turn")),
+            ("admitted", "finished", Some("retry-input")),
+        ] {
+            let fixture = Fixture::new();
+            fixture.insert(
+                "codex",
+                &format!("{ORIGINAL}:primary"),
+                state,
+                id,
+                phase,
+                false,
             );
+            let attempt = fixture
+                .history("codex", RETRY, &retry)
+                .next_attempt(&mut fixture.db(), SCOPE, NOW)
+                .unwrap();
+            assert!(attempt.is_none(), "{state} {id:?}");
         }
         let fixture = Fixture::new();
         fixture.insert(
@@ -890,13 +933,15 @@ mod tests {
                 phase,
                 false,
             );
-            assert!(
-                fixture
-                    .history("codex", FRESH, &new_user)
-                    .next_attempt(&mut fixture.db(), SCOPE, observed)
-                    .unwrap()
-                    .is_none()
-            );
+            let attempt = fixture
+                .history("codex", FRESH, &new_user)
+                .next_attempt(&mut fixture.db(), SCOPE, observed)
+                .unwrap();
+            if state == "unknown" {
+                assert!(attempt.is_some());
+            } else {
+                assert!(attempt.is_none());
+            }
             assert_eq!(
                 fixture
                     .db()

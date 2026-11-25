@@ -20,8 +20,11 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
 
-describe("ChatGPT MCP OAuth HTTP flow", () => {
-  it("serves metadata, requires consent, exchanges and renews tokens, then calls the owner MCP resource", async () => {
+describe("MCP OAuth HTTP flow", () => {
+  it.each([
+    ["ChatGPT custom MCP", CHATGPT_REDIRECT_URI],
+    ["Claude custom MCP", "https://claude.ai/api/mcp/auth_callback"],
+  ])("completes consent, token exchange, refresh and MCP access for %s", async (clientName, redirectUri) => {
     const root = await mkdtemp(join(tmpdir(), "agent-herder-oauth-http-"));
     roots.push(root);
     const store = new McpOAuthTokenStore(join(root, "tokens.json"));
@@ -53,19 +56,19 @@ describe("ChatGPT MCP OAuth HTTP flow", () => {
 
     const registration = await fetch(`${origin}/oauth/register`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ client_name: "ChatGPT custom MCP", redirect_uris: [CHATGPT_REDIRECT_URI], token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"] }),
+      body: JSON.stringify({ client_name: clientName, redirect_uris: [redirectUri], token_endpoint_auth_method: "none", grant_types: ["authorization_code", "refresh_token"], response_types: ["code"] }),
     });
     expect(registration.status).toBe(201);
     const client = await registration.json() as { client_id: string };
     const rejectedRegistration = await fetch(`${origin}/oauth/register`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ redirect_uris: ["https://attacker.example/callback"] }),
+      body: JSON.stringify({ redirect_uris: ["javascript:alert(1)"] }),
     });
     expect(rejectedRegistration.status).toBe(400);
 
     const verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~";
     const emptyScope = new URLSearchParams({
-      client_id: client.client_id, redirect_uri: CHATGPT_REDIRECT_URI, response_type: "code",
+      client_id: client.client_id, redirect_uri: redirectUri, response_type: "code",
       code_challenge: pkceS256(verifier), code_challenge_method: "S256", resource: MCP_OAUTH_RESOURCE,
       scope: "", state: "empty-scope-state",
     });
@@ -77,7 +80,7 @@ describe("ChatGPT MCP OAuth HTTP flow", () => {
 
     const state = "chatgpt-state-binding-274c&<test>";
     const params = new URLSearchParams({
-      client_id: client.client_id, redirect_uri: CHATGPT_REDIRECT_URI, response_type: "code",
+      client_id: client.client_id, redirect_uri: redirectUri, response_type: "code",
       code_challenge: pkceS256(verifier), code_challenge_method: "S256", resource: MCP_OAUTH_RESOURCE,
       scope: "agent-herder:owner offline_access", state,
     });
@@ -85,11 +88,12 @@ describe("ChatGPT MCP OAuth HTTP flow", () => {
     expect(authorization.status).toBe(200);
     const page = await authorization.text();
     expect(page).toContain("полные текущие права владельца MCP");
-    expect(page).toContain("ChatGPT custom MCP");
+    expect(page).toContain(clientName);
+    expect(page).toContain(`<strong>${new URL(redirectUri).origin}</strong>`);
     const transaction = page.match(/name="transaction" value="([^"]+)"/)?.[1];
     expect(transaction).toBeTruthy();
 
-    const form = new URLSearchParams({ transaction: transaction!, client_id: client.client_id, redirect_uri: CHATGPT_REDIRECT_URI, state });
+    const form = new URLSearchParams({ transaction: transaction!, client_id: client.client_id, redirect_uri: redirectUri, state });
     for (const [field, value] of [["state", "wrong-state"], ["redirect_uri", "https://attacker.example/callback"], ["transaction", "wrong-transaction"]]) {
       const invalid = new URLSearchParams(form);
       invalid.set(field!, value!);
@@ -107,7 +111,7 @@ describe("ChatGPT MCP OAuth HTTP flow", () => {
     expect(consent.headers.get("content-security-policy")).toBe(authorization.headers.get("content-security-policy"));
     expect(consent.headers.get("content-security-policy")).toContain("form-action 'self'");
     const confirmation = await consent.text();
-    expect(confirmation).toContain("Вернуться в ChatGPT");
+    expect(confirmation).toContain("Вернуться в приложение");
     expect(confirmation).not.toMatch(/<script|http-equiv=["']refresh/i);
     const callbackLink = confirmation.match(/href="([^"\s]+)"/)?.[1];
     expect(callbackLink).toBeTruthy();
@@ -116,14 +120,14 @@ describe("ChatGPT MCP OAuth HTTP flow", () => {
     const replay = await fetch(`${origin}/oauth/consent`, { method: "POST", headers: { Origin: origin, "Content-Type": "application/x-www-form-urlencoded" }, body: form });
     expect(replay.status).toBe(400);
     expect(await replay.json()).toEqual({ error: "invalid_authorization_transaction" });
-    expect(callback.origin + callback.pathname).toBe(CHATGPT_REDIRECT_URI);
+    expect(callback.origin + callback.pathname).toBe(redirectUri);
     expect(callback.searchParams.get("state")).toBe(state);
     expect(callback.searchParams.get("iss")).toBe(MCP_OAUTH_ISSUER);
     const code = callback.searchParams.get("code")!;
 
     const exchange = await fetch(`${origin}/oauth/token`, {
       method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ grant_type: "authorization_code", client_id: client.client_id, code, redirect_uri: CHATGPT_REDIRECT_URI, code_verifier: verifier, resource: MCP_OAUTH_RESOURCE }),
+      body: new URLSearchParams({ grant_type: "authorization_code", client_id: client.client_id, code, redirect_uri: redirectUri, code_verifier: verifier, resource: MCP_OAUTH_RESOURCE }),
     });
     expect(exchange.status).toBe(200);
     const initial = await exchange.json() as { access_token: string; refresh_token: string; token_type: string };
