@@ -123,7 +123,7 @@ async fn explicit_context_preserves_acl_self_boundary_and_per_request_revocation
     let router = herder_http::router(
         authority.clone(),
         OAuthPolicy {
-            issuer: "https://fixture.invalid".into(),
+            issuer: "https://issuer.invalid".into(),
             audience: "https://fixture.invalid/mcp".into(),
             required_scope: "owner".into(),
         },
@@ -138,6 +138,26 @@ async fn explicit_context_preserves_acl_self_boundary_and_per_request_revocation
         .timeout(Duration::from_secs(5))
         .build()
         .unwrap();
+
+    let challenge = r#"Bearer resource_metadata="https://fixture.invalid/.well-known/oauth-protected-resource/mcp", scope="owner""#;
+    for method in [
+        reqwest::Method::POST,
+        reqwest::Method::GET,
+        reqwest::Method::DELETE,
+    ] {
+        let response = client
+            .request(method, &url)
+            .header("x-forwarded-host", "forwarded.invalid")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response.headers()[reqwest::header::WWW_AUTHENTICATE],
+            challenge
+        );
+    }
+    assert_eq!(app.calls.load(Ordering::SeqCst), 0);
 
     let implicit = context(&client, &url, json!({"action":"context"})).await;
     assert_eq!(implicit.status(), reqwest::StatusCode::OK);
@@ -190,5 +210,9 @@ async fn explicit_context_preserves_acl_self_boundary_and_per_request_revocation
     )
     .await;
     assert_eq!(revoked.status(), reqwest::StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        revoked.headers()[reqwest::header::WWW_AUTHENTICATE],
+        challenge
+    );
     assert_eq!(app.calls.load(Ordering::SeqCst), 2);
 }

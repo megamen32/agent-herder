@@ -5,7 +5,7 @@ pub mod authority_channel;
 use axum::{
     Router,
     extract::{Request, State},
-    http::{StatusCode, header},
+    http::{HeaderValue, StatusCode, Uri, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
 };
@@ -33,6 +33,43 @@ struct VerifiedRequest(ConnectionIdentity);
 struct AuthState {
     authority: Arc<dyn OAuthAuthority>,
     policy: OAuthPolicy,
+    challenge: HeaderValue,
+}
+
+fn bearer_challenge(policy: &OAuthPolicy) -> Option<HeaderValue> {
+    // Resource discovery is relative to the configured audience, even when
+    // a separate host issues tokens. Request and proxy headers have no role.
+    let uri = policy.audience.parse::<Uri>().ok()?;
+    let authority = uri.authority()?;
+    if uri.scheme_str() != Some("https")
+        || authority.host().is_empty()
+        || authority.as_str().contains('@')
+        || uri.query().is_some()
+        || uri.path().contains(['"', '\\'])
+        || policy.required_scope.is_empty()
+        || !policy
+            .required_scope
+            .bytes()
+            .all(|b| matches!(b, 0x21 | 0x23..=0x5b | 0x5d..=0x7e))
+    {
+        return None;
+    }
+    let path = if uri.path() == "/" { "" } else { uri.path() };
+    let value = format!(
+        r#"Bearer resource_metadata="https://{authority}/.well-known/oauth-protected-resource{path}", scope="{}""#,
+        policy.required_scope,
+    );
+    HeaderValue::from_str(&value).ok()
+}
+
+impl AuthState {
+    fn unauthorized(&self) -> Response {
+        (
+            StatusCode::UNAUTHORIZED,
+            [(header::WWW_AUTHENTICATE, self.challenge.clone())],
+        )
+            .into_response()
+    }
 }
 
 async fn authorize(State(state): State<AuthState>, mut request: Request, next: Next) -> Response {
@@ -43,7 +80,7 @@ async fn authorize(State(state): State<AuthState>, mut request: Request, next: N
         .count()
         != 1
     {
-        return StatusCode::UNAUTHORIZED.into_response();
+        return state.unauthorized();
     }
     let token = match request
         .headers()
@@ -52,7 +89,7 @@ async fn authorize(State(state): State<AuthState>, mut request: Request, next: N
         .and_then(|v| v.strip_prefix("Bearer "))
     {
         Some(v) if !v.is_empty() && !v.contains(char::is_whitespace) => v,
-        _ => return StatusCode::UNAUTHORIZED.into_response(),
+        _ => return state.unauthorized(),
     };
     let identity = match tokio::time::timeout(
         std::time::Duration::from_secs(3),
@@ -61,7 +98,7 @@ async fn authorize(State(state): State<AuthState>, mut request: Request, next: N
     .await
     {
         Ok(Ok(value)) => value,
-        _ => return StatusCode::UNAUTHORIZED.into_response(),
+        _ => return state.unauthorized(),
     };
     request.extensions_mut().insert(VerifiedRequest(identity));
     next.run(request).await
@@ -164,10 +201,15 @@ pub fn router(
                 .with_json_response(true)
                 .with_legacy_session_mode(false),
         );
+    let challenge = bearer_challenge(&policy).unwrap_or_else(|| HeaderValue::from_static("Bearer"));
     Router::new()
         .nest_service("/mcp", service)
         .layer(middleware::from_fn_with_state(
-            AuthState { authority, policy },
+            AuthState {
+                authority,
+                policy,
+                challenge,
+            },
             authorize,
         ))
 }
