@@ -39,9 +39,24 @@ impl ExtensionLink {
         provider: &'static str,
     ) -> io::Result<Self> {
         let token_digest = token_digest(token_file)?;
-        let listener = TcpListener::bind(address).await?;
+        Self::open_listener(address, token_digest, provider).await
+    }
+
+    async fn open_listener(
+        address: SocketAddr,
+        expected: [u8; 32],
+        provider: &'static str,
+    ) -> io::Result<Self> {
         let (sender, receiver) = mpsc::channel(1);
-        tokio::spawn(listen(listener, token_digest, provider, receiver));
+        match TcpListener::bind(address).await {
+            Ok(listener) => {
+                tokio::spawn(listen(listener, expected, provider, receiver));
+            }
+            Err(error) if error.kind() == io::ErrorKind::AddrInUse => {
+                tokio::spawn(wait_for_listener(address, expected, provider, receiver));
+            }
+            Err(error) => return Err(error),
+        }
         Ok(Self(sender))
     }
 
@@ -182,6 +197,28 @@ async fn connect(
     Some(socket)
 }
 
+/// A busy browser port must not abort discovery for every other provider.
+async fn wait_for_listener(
+    address: SocketAddr,
+    expected: [u8; 32],
+    provider: &'static str,
+    mut inbox: mpsc::Receiver<Command>,
+) {
+    while let Some(command) = inbox.recv().await {
+        let bound = TcpListener::bind(address).await;
+        // No authenticated browser received this operation. Do not retain or replay it.
+        let _ = command.reply.send(Err(CdpError::Connect));
+        match bound {
+            Ok(listener) => {
+                listen(listener, expected, provider, inbox).await;
+                return;
+            }
+            Err(error) if error.kind() == io::ErrorKind::AddrInUse => continue,
+            Err(_) => return,
+        }
+    }
+}
+
 async fn listen(
     listener: TcpListener,
     expected: [u8; 32],
@@ -261,5 +298,32 @@ async fn exchange(
             true => reply.get_mut("result").map(|value| Ok(value.take())),
             false => Some(Err(CdpError::Protocol)),
         };
+    }
+}
+
+#[cfg(test)]
+mod listener_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn busy_port_preserves_startup_and_recovers_on_demand() {
+        let occupied = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = occupied.local_addr().unwrap();
+        let link = ExtensionLink::open_listener(address, [0; 32], "chatgpt")
+            .await
+            .unwrap();
+        assert!(matches!(
+            link.call("fixture", Value::Null).await,
+            Err(CdpError::Connect)
+        ));
+        drop(occupied);
+        assert!(matches!(
+            link.call("fixture", Value::Null).await,
+            Err(CdpError::Connect)
+        ));
+        let error = TcpListener::bind(address)
+            .await
+            .expect_err("owner must reclaim its port");
+        assert_eq!(error.kind(), io::ErrorKind::AddrInUse);
     }
 }

@@ -45,6 +45,15 @@ class NativeOwnerBootTest(unittest.TestCase):
             boot.activate(connection, "fixture-bearer")
         connection.request.assert_called_once()
 
+    def test_rpc_error_text_is_never_in_the_diagnostic(self):
+        connection = Mock()
+        connection.getresponse.return_value = response(200, {"id": 1, "error": {
+            "code": -32000, "message": "private upstream contents", "data": {"private": "ignored"},
+        }})
+        with self.assertRaises(boot.ReadinessFailure) as caught:
+            boot.activate(connection, "fixture-bearer")
+        self.assertEqual(str(caught.exception), "initialize returned no MCP result (RPC -32000)")
+
     def test_only_the_named_credential_is_read_from_a_protected_file(self):
         with TemporaryDirectory() as directory:
             path = Path(directory) / "fixture.env"
