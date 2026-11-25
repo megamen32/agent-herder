@@ -428,6 +428,7 @@ fn select_route(
 
     let from_quota_failure = boundary.failure == RecoveryFailure::Quota;
     let throttled = boundary.failure == RecoveryFailure::Throttled;
+    let same_route_retry = throttled.then(|| native.same_route_retry(target, boundary));
     let primary = if from_quota_failure || throttled || quota_policy.enabled {
         profile.quota(
             native,
@@ -459,6 +460,12 @@ fn select_route(
         // Any error, including an unclassified one, gets its first retry.
         primary.unwrap_or(true)
     };
+    if same_route_retry == Some(SameRouteRetry::UseQuotaPolicy) {
+        // A typed capacity response means the saved model is unavailable even
+        // when its account still has quota; use a permitted, positive-quota
+        // route before retrying the same model.
+        return alternate.or_else(|| allowed.then_some(saved));
+    }
     allowed.then_some(saved)
 }
 
@@ -1221,6 +1228,7 @@ mod tests {
         target: SessionAddress,
         quota: Option<bool>,
         alternate: bool,
+        capacity: bool,
     }
 
     impl RecoveryControl for RouteControl {
@@ -1247,7 +1255,11 @@ mod tests {
             None
         }
         fn same_route_retry(&self, _: &SessionAddress, _: &RecoveryBoundary) -> SameRouteRetry {
-            SameRouteRetry::Ready
+            if self.capacity {
+                SameRouteRetry::UseQuotaPolicy
+            } else {
+                SameRouteRetry::Ready
+            }
         }
         fn supports_alternate(
             &self,
@@ -1271,7 +1283,7 @@ mod tests {
     }
 
     #[test]
-    fn throttle_retries_the_saved_route_first_even_with_a_good_fallback() {
+    fn capacity_prefers_an_allowed_fallback_with_positive_quota() {
         let mut control = RouteControl {
             target: SessionAddress {
                 instance: InstanceRef {
@@ -1282,6 +1294,7 @@ mod tests {
             },
             quota: Some(true),
             alternate: true,
+            capacity: true,
         };
         let mut boundary = RecoveryBoundary {
             turn_id: "failed-turn".into(),
@@ -1321,8 +1334,8 @@ mod tests {
             )
         };
         let selected = select(&control, &boundary, RecoveryStage::Primary).unwrap();
-        assert_eq!(selected.provider, "saved");
-        assert_eq!(selected.model.as_deref(), Some("saved-model"));
+        assert_eq!(selected.provider, "alternate");
+        assert_eq!(selected.model.as_deref(), Some("replacement"));
         let alternate = select(&control, &boundary, RecoveryStage::Fallback).unwrap();
         assert_eq!(alternate.provider, "alternate");
         let mut unconfigured = profile.clone();
