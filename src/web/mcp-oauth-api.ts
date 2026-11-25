@@ -161,7 +161,7 @@ async function register(request: IncomingMessage, response: ServerResponse, opti
     return json(response, 400, { error: "invalid_client_metadata" });
   }
   const requestedName = typeof body.client_name === "string" ? body.client_name.trim().replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 80) : "";
-  const clientName = requestedName || "ChatGPT custom MCP";
+  const clientName = requestedName || new URL(redirectUri).host;
   try {
     const client = await options.store.registerClient(clientName, redirectUri);
     return json(response, 201, {
@@ -254,11 +254,11 @@ function consentPage(input: { clientName: string; clientId: string; callback: st
     const value = key === "transaction" ? input.transaction : key === "client_id" ? input.clientId : key === "redirect_uri" ? input.callback : input.state;
     return `<input type="hidden" name="${key}" value="${escapeHtml(value)}">`;
   }).join("");
-  return `<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Доступ к Agent Herder MCP</title><body><main><h1>Подключить Agent Herder</h1><p><strong>${name}</strong> запрашивает доступ к Agent Herder MCP.</p><p>Подключение получит полные текущие права владельца MCP — тот же набор операций, что у существующих owner Bearer клиентов, включая чтение сессий. Access token истекает через 15 минут; refresh token действует 30 дней и меняется при каждом обновлении. Доступ можно отозвать.</p><p>Запрошено: <code>${escapeHtml(input.scopes.join(" "))}</code></p><form method="post" action="${MCP_OAUTH_CONSENT_PATH}">${fields}<button type="submit">Разрешить подключение</button></form><p>Если вы не начинали подключение, закройте эту страницу.</p></main></body></html>`;
+  return `<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Доступ к Agent Herder MCP</title><body><main><h1>Подключить Agent Herder</h1><p><strong>${name}</strong> запрашивает доступ к Agent Herder MCP.</p><p>После подтверждения код получит <strong>${escapeHtml(new URL(input.callback).origin)}</strong>.</p><p>Подключение получит полные текущие права владельца MCP — тот же набор операций, что у существующих owner Bearer клиентов, включая чтение сессий. Access token истекает через 15 минут; refresh token действует 30 дней и меняется при каждом обновлении. Доступ можно отозвать.</p><p>Запрошено: <code>${escapeHtml(input.scopes.join(" "))}</code></p><form method="post" action="${MCP_OAUTH_CONSENT_PATH}">${fields}<button type="submit">Разрешить подключение</button></form><p>Если вы не начинали подключение, закройте эту страницу.</p></main></body></html>`;
 }
 
 function consentCompletePage(callback: string): string {
-  return `<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Завершить подключение Agent Herder</title><body><main><h1>Доступ разрешён</h1><p>Завершите подключение, вернувшись в ChatGPT.</p><p><a href="${escapeHtml(callback)}" rel="noreferrer">Вернуться в ChatGPT</a></p><p>Ссылка действует 2 минуты. Если она истекла, начните подключение заново в ChatGPT.</p></main></body></html>`;
+  return `<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Завершить подключение Agent Herder</title><body><main><h1>Доступ разрешён</h1><p>Код подключения получит <strong>${escapeHtml(new URL(callback).origin)}</strong>.</p><p><a href="${escapeHtml(callback)}" rel="noreferrer">Вернуться в приложение</a></p><p>Ссылка действует 2 минуты. Если она истекла, начните подключение заново в приложении.</p></main></body></html>`;
 }
 
 function one(params: URLSearchParams, key: string): string | undefined {
