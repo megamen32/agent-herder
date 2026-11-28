@@ -410,6 +410,14 @@ impl ApplicationPort for OwnerApp {
             if let Some(result) = self.policy.discover_instance(identity, &request, None) {
                 return Some(result);
             }
+            if let Some(result) = super::owner_reads::native_opencode_registered_list(
+                identity,
+                &request,
+                &self.policy,
+                OpenCodeSessionReader::new(self.interrupt.control.connection().clone()),
+            ).await {
+                return Some(result);
+            }
             if matches!(&request, catalog::Request::Create(_)) {
                 return self.create.call(identity, request).await;
             }

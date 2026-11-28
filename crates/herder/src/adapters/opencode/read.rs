@@ -28,6 +28,8 @@ pub struct OpenCodeSession {
     pub parent_session_id: Option<String>,
     pub project_id: String,
     pub outcome: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
     pub time: OpenCodeSessionTime,
     pub directory: String,
 }
@@ -59,8 +61,26 @@ struct SessionWire {
     #[serde(rename = "projectID")]
     project_id: String,
     outcome: Option<String>,
+    model: Option<SessionModelWire>,
     time: SessionTimeWire,
     location: SessionLocationWire,
+}
+
+#[derive(Deserialize)]
+struct SessionModelWire {
+    #[serde(rename = "providerID")]
+    provider: String,
+    id: String,
+}
+
+impl SessionModelWire {
+    fn qualified_id(self) -> Option<String> {
+        let valid = |value: &str| !value.is_empty() && !value.chars().any(char::is_whitespace);
+        if !valid(&self.provider) || self.provider.contains('/') || !valid(&self.id) {
+            return None;
+        }
+        Some(format!("{}/{}", self.provider, self.id))
+    }
 }
 
 #[derive(Deserialize)]
@@ -105,6 +125,8 @@ enum MessageWire {
         id: String,
         time: AssistantTimeWire,
         content: Vec<AssistantContentWire>,
+        finish: Option<String>,
+        error: Option<serde_json::Value>,
     },
     #[serde(other)]
     Other,
@@ -139,6 +161,8 @@ pub struct OpenCodeMessage {
     pub created: f64,
     pub completed: Option<f64>,
     pub partial: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase: Option<&'static str>,
 }
 
 /// A bounded page returned by the native message-history route.
@@ -402,7 +426,7 @@ impl OpenCodeSessionReader {
                 message_id: Some(id),
                 reply_to_input_id: None,
             }),
-            MessageWire::Assistant { id, time, content } => Some(SourceMessage {
+            MessageWire::Assistant { id, time, content, .. } => Some(SourceMessage {
                 text: content
                     .into_iter()
                     .filter_map(|part| match part {
@@ -450,6 +474,7 @@ impl OpenCodeSessionReader {
             parent_session_id: session.parent_id,
             project_id: session.project_id,
             outcome: session.outcome,
+            model: session.model.and_then(SessionModelWire::qualified_id),
             time: OpenCodeSessionTime {
                 created: session.time.created,
                 updated: session.time.updated,
@@ -471,8 +496,9 @@ fn project_message(message: MessageWire) -> Option<OpenCodeMessage> {
             created: time.created,
             completed: None,
             partial: None,
+            phase: None,
         }),
-        MessageWire::Assistant { id, time, content } => Some(OpenCodeMessage {
+        MessageWire::Assistant { id, time, content, finish, error } => Some(OpenCodeMessage {
             id,
             role: "assistant".into(),
             text: content
@@ -486,6 +512,10 @@ fn project_message(message: MessageWire) -> Option<OpenCodeMessage> {
             created: time.created,
             completed: time.completed,
             partial: time.completed.map(|_| false),
+            phase: (finish.as_deref() == Some("stop")
+                && error.is_none()
+                && time.completed.is_some_and(|completed| completed >= time.created))
+                .then_some("stop"),
         }),
         MessageWire::Other => None,
     }
