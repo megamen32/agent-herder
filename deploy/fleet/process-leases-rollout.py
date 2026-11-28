@@ -1006,6 +1006,11 @@ def observe_completion(state, gate):
 
 
 def run(args):
+    backup = Path(args.backup)
+    if not backup.is_absolute() or backup.parent.resolve(strict=True) != backup.parent:
+        raise ValueError("backup parent must exist and be canonical")
+    if os.path.lexists(backup):
+        raise FileExistsError(f"backup path already exists: {backup}")
     selector = candidate.private_file(args.selector)
     candidate.private_file(args.proof)
     with candidate.selector_lock(selector):
