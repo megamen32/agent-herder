@@ -125,6 +125,7 @@ import {
   writeSessionLabel,
   SESSION_LABEL_LIMITS,
 } from "../session-labels.js";
+import { completionStatus, refreshCodexTurn } from "../session-completion.js";
 import { publishHealthRefusal, type HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
 import { checkCodexQuota, loadCodexQuotaPolicy, saveCodexQuotaPolicy } from "../codex-quota-guard.js";
@@ -3447,6 +3448,18 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     request.once("close", cleanup);
     response.once("close", cleanup);
     return;
+  }
+
+  const completionMatch = url.pathname.match(/^\/api\/sessions\/codex\/([^/]+)\/status$/u);
+  if (request.method === "GET" && completionMatch) {
+    if (!events) return sendJson(response, 503, { error: "Event journal is disabled" });
+    const id = decodeURIComponent(completionMatch[1]);
+    if (id.length > 512) return sendJson(response, 400, { error: "Invalid session ID" });
+    const route = await resolveSessionRoute("codex", id);
+    if (route.kind === "deny") return sendJson(response, 409, { error: "Project-scoped session binding could not be verified." });
+    await refreshCodexTurn(events, route.adapters.get("codex"), id).catch(() => {});
+    response.setHeader("cache-control", "no-store");
+    return sendJson(response, 200, completionStatus(events, id));
   }
 
   if (request.method === "GET" && url.pathname === "/api/events") {

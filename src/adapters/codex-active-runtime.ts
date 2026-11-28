@@ -83,6 +83,7 @@ export async function readCodexActiveRuntime(
         } catch {
           nativeTurnStateUnavailable = true;
         }
+        if (!blocked && nativeLastTurn && ["completed", "failed", "interrupted"].includes(nativeLastTurn.status)) return;
         if (nativeTurnStateUnavailable) failedCandidateCount += 1;
         const observedAt = new Date().toISOString();
         const session = map(thread);

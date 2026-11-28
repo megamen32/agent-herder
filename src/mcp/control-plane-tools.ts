@@ -7,6 +7,9 @@ import { structuredResult } from "./results.js";
 import { readLongMessage } from "../long-messages.js";
 import { handleSaveMessageToFile } from "../mcp-tools/handlers.js";
 
+import { awaitCompletion } from "../session-completion.js";
+import type { HarnessAdapter } from "../types/index.js";
+
 const jobSchema = z.object({
   id: z.string(), kind: z.string(), state: z.string(), createdAt: z.string(), updatedAt: z.string(),
   ownerSessionId: z.string().optional(), progress: z.number().optional(), statusMessage: z.string().optional(),
@@ -37,6 +40,7 @@ const coordinationNoteCreateSchema = z.object({
 });
 
 export function registerControlPlaneTools(server: McpServer, deps: {
+  completionAdapter?: (id: string) => Promise<HarnessAdapter | undefined>;
   jobs: HerderJobRegistry;
   events: HerderEventBus;
   coordination: CoordinationNoteStore;
@@ -80,6 +84,13 @@ export function registerControlPlaneTools(server: McpServer, deps: {
     inputSchema: z.object({ jobId: z.string().min(1) }),
     outputSchema: z.object({ job: jobSchema.nullable() }),
   }, async (args) => structuredResult({ job: jobs.cancel(args.jobId) }));
+
+  server.registerTool("session_await", {
+    description: "Wait for any watched native Codex thread to finish a turn. Omit afterSequence for current status, then pass the returned cursor. A timeout returns completion:null. On truncated replay, read current status.",
+    inputSchema: z.object({ sessionIds: z.array(z.string().min(1).max(512)).min(1).max(32),
+      afterSequence: z.number().int().nonnegative().optional(), timeoutMs: z.number().int().min(0).max(50000).default(45000) }),
+  }, async (args, ctx) => structuredResult(await awaitCompletion(events, args.sessionIds, args.afterSequence,
+    args.timeoutMs, ctx.mcpReq.signal, deps.completionAdapter)));
 
   server.registerTool("event_list", {
     description: "Replay Agent Herder domain events after a global sequence cursor. Use afterSequence from the last seen event; uriPrefix narrows replay to one resource subtree.",

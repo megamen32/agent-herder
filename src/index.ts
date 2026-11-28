@@ -748,7 +748,14 @@ function registerTools(
     registerCdpTools(server, { client: cdpChatClient, capabilities: cdpCapabilities, accountArchive: cdpAccountArchive, historyArchive: cdpHistoryArchive, jobs });
   }
   registerUserIoDotTools(server, userioDot);
-  registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes, autopilot: { command: input => autopilotSessionCommand(input, canonicalClient) } });
+  registerControlPlaneTools(server, {
+    completionAdapter: async sessionId => {
+      const route = await integratorFleetRuntime.adapterForSession({hostId: hostname(), harness: "codex", nativeSessionId: sessionId});
+      if (route.kind === "deny") throw new Error("Project-scoped session binding could not be verified.");
+      return route.kind === "scoped" ? route.adapter : adapters.get("codex");
+    },
+    jobs, events, coordination: coordinationNotes, autopilot: { command: input => autopilotSessionCommand(input, canonicalClient) },
+  });
   registerResumeAfterTools(server, resumeAfter, humanRequestsRegistry);
   registerCadenceTools(server, cadence);
 

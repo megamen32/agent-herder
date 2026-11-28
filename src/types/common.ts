@@ -128,6 +128,7 @@ export type HarnessEventKind =
   | "process.disconnected";
 
 export interface HarnessEvent {
+  completionState?: import("../session-completion.js").CodexTurnState;
   kind: HarnessEventKind;
   harness: HarnessType;
   sessionId?: string;
@@ -408,6 +409,7 @@ export interface SessionSnapshotReceipt {
 }
 
 export interface HarnessAdapter {
+  readCompletionState?(id: string): Promise<import("../session-completion.js").CodexTurnState | null>;
   /** Harness type identifier */
   readonly type: HarnessType;
   /** Human-readable name */

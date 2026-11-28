@@ -86,3 +86,13 @@ it.skipIf(!process.env.CODEX_ACTIVE_PROBE_SOCKET)("reads current loaded native a
   await writeFile("/home/roomhacker/agents-projects/agent-herder/.agents/tasks/20261023-fleet-session-search/codex-native-active-freshness-proof.json",JSON.stringify({snapshots},null,2));
  }finally{client.close()}
 },20000);
+
+it("excludes an active thread whose latest exact turn has already failed", async () => {
+ const result = await readCodexActiveRuntime(async method => {
+   if (method === "thread/loaded/list") return {data:["child"]};
+   if (method === "thread/read") return {thread:{id:"child",status:"active"}};
+   return {data:[{id:"turn",status:"failed",error:{message:"provider_unavailable"}}]};
+ },map);
+ expect(result.sessions).toEqual([]);
+ expect(result.receipt.exhaustive).toBe(true);
+});

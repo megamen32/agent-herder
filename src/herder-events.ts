@@ -2,9 +2,13 @@ import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readF
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
+import type { CodexTurnState } from "./session-completion.js";
+
 export type HerderEventKind = "coordination" | "human-request" | "sessions" | "presence" | "jobs" | "adapters" | "health";
 
 export interface HerderEvent {
+  type?: "turn.started" | "turn.completed";
+  turn?: CodexTurnState;
   kind: HerderEventKind;
   uri: string;
   action: "created" | "updated" | "deleted" | "changed";
@@ -71,6 +75,7 @@ export function healthRefusalEvent(input: HealthRefusalEventInput): Omit<HerderE
 }
 
 interface PersistedEventJournal {
+  latestTurns?: HerderEvent[];
   version: 1;
   latestSequence: number;
   revisions: Record<string, number>;
@@ -95,6 +100,7 @@ export function defaultHerderEventPath(): string {
 export class HerderEventBus {
   private readonly listeners = new Set<(event: HerderEvent) => void>();
   private readonly events: HerderEvent[] = [];
+  private readonly latestTurns = new Map<string, HerderEvent>();
   private readonly revisions = new Map<string, number>();
   private readonly persistencePath?: string;
   private readonly maxRetained: number;
@@ -123,10 +129,12 @@ export class HerderEventBus {
       sequence: this.nextSequence++,
       revision,
     };
+    if (normalized.turn) this.latestTurns.set(normalized.turn.sessionId, normalized);
     this.events.push(normalized);
     if (this.persistencePath) this.pendingEvents.push(normalized);
     if (this.events.length > this.maxRetained) this.events.splice(0, this.events.length - this.maxRetained);
-    this.schedulePersist();
+    if (normalized.turn) this.persist();
+    else this.schedulePersist();
     for (const listener of [...this.listeners]) {
       try { listener(normalized); } catch { /* one listener must not block peers */ }
     }
@@ -155,6 +163,12 @@ export class HerderEventBus {
       .map((event) => ({ ...event }));
   }
 
+  latestCodexTurn(id: string) { return this.latestTurns.get(id); }
+
+  firstCompletionAfter(sequence: number, sessions: Set<string>) {
+    return this.events.find(event => event.sequence > sequence && event.turn?.state === "finished" && sessions.has(event.turn.sessionId));
+  }
+
   oldestSequence(): number | null {
     return this.events[0]?.sequence ?? null;
   }
@@ -168,6 +182,9 @@ export class HerderEventBus {
         if (parsed.version === 1) {
           const events = Array.isArray(parsed.events) ? parsed.events.slice(-this.maxRetained) : [];
           this.events.push(...events);
+          for (const event of parsed.latestTurns ?? events) {
+            if (event.turn) this.latestTurns.set(event.turn.sessionId, event);
+          }
           for (const [uri, revision] of Object.entries(parsed.revisions || {})) {
             if (Number.isInteger(revision) && revision >= 0) this.revisions.set(uri, revision);
           }
@@ -194,6 +211,7 @@ export class HerderEventBus {
             || typeof event.uri !== "string" || !event.uri || replayed.has(event.sequence)) continue;
           replayed.add(event.sequence);
           this.events.push(event);
+          if (event.turn) this.latestTurns.set(event.turn.sessionId, event);
           this.revisions.set(event.uri, Math.max(this.revisions.get(event.uri) ?? 0, event.revision));
           snapshotSequence = Math.max(snapshotSequence, event.sequence);
         }
@@ -241,6 +259,7 @@ export class HerderEventBus {
     const file: PersistedEventJournal = {
       version: 1,
       latestSequence: this.latestSequence(),
+      latestTurns: [...this.latestTurns.values()],
       revisions: Object.fromEntries(this.revisions),
       events: this.events,
     };
