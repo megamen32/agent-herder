@@ -678,9 +678,12 @@ class ComponentAncestry(unittest.TestCase):
         git_dir = self.repo / ".git"
         self.assertEqual(rollout.scheduler_source(git_dir, self.after, {"kind": "recovery"}, receipt), self.new)
         self.assertEqual(rollout.scheduler_source(git_dir, self.after, None, receipt), self.new)
+        rebind = {"schema": 2, "type": "herder-native-profile-rebind", "kinds": [],
+                  "bindings": {}, "profiles": [{"kind": "zai"}]}
+        self.assertEqual(rollout.scheduler_source(git_dir, self.after, rebind, receipt), self.new)
         self.assertEqual(rollout.scheduler_source(git_dir, self.after, {"kind": "adapter"}, receipt), native_source)
         self.after["process_leases_build"]["source_commit"] = self.commit("changed scheduler input")
-        for migration in (None, {"kind": "recovery"}):
+        for migration in (None, {"kind": "recovery"}, rebind):
             with self.subTest(migration=migration), self.assertRaisesRegex(ValueError, "changes installed scheduler inputs"):
                 rollout.scheduler_source(git_dir, self.after, migration, receipt)
 
