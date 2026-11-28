@@ -1976,7 +1976,7 @@ fn invalid_ahap_startup_frame_is_not_treated_as_transport_unavailability() {
 }
 
 fn ahap_startup_isolation_probe(failure: Option<&str>) {
-    let fixtures = [Fixture::new(), Fixture::new(), Fixture::new()];
+    let fixtures = [Fixture::new(), Fixture::new(), Fixture::new(), Fixture::new()];
     for (i, f) in fixtures.iter().enumerate() {
         f.migrate_v4();
         fs::write(f.root.join("startup-mode"), if let Some(mode) = failure.filter(|_| i == 0) {
@@ -1999,6 +1999,8 @@ for line in sys.stdin:
    while True:time.sleep(1)
   if mode=='ready':time.sleep(5.5)
   v={'harness':'opencode' if mode=='mismatch' else 'codex','capabilities':{'methods':['init','listSessions','getSession','getSessionMessages','sendMessage','createSession'],'deliveryModes':['queue']}}
+ elif m in ('getSession','listSessions') and os.path.exists(os.path.join(home,'fail-reads')):
+  print(json.dumps({'jsonrpc':'2.0','id':r['id'],'error':{'code':-32000,'message':'reader unavailable'}}),flush=True);continue
  elif m=='init':v=None
  elif m=='getSession':v={'id':r['params']['id'],'harness':'codex','status':'idle','cwd':home}
  elif m=='listSessions':v=[]
@@ -2057,7 +2059,7 @@ try:
  result=call('tools/call',{'name':'discover','arguments':{'action':'nodes'}})
  assert result['structuredContent']['nodes']==[{'node_ref':'node'}],result
  result=call('tools/call',{'name':'discover','arguments':{'action':'instances'}})
- rows=result['structuredContent']['instances'];assert len(rows)==3,rows
+ rows=result['structuredContent']['instances'];assert len(rows)==4,rows
  for i in range(2):
   row=next(row for row in rows if row['instance_ref']=='startup-'+str(i))
   assert row['availability']=='unavailable' and 'capabilities' not in row,row
@@ -2076,7 +2078,15 @@ try:
  with sqlite3.connect(json.load(open(sys.argv[3]))['database']) as db:
   assert db.execute('SELECT count(*) FROM intents').fetchone()[0]==0,'offline owner admitted an intent'
  result=call('tools/call',{'name':'discover','arguments':{'action':'instances'}})
- assert len(result['structuredContent']['instances'])==3,result
+ assert len(result['structuredContent']['instances'])==4,result
+ result=call('tools/call',{'name':'session','arguments':{'action':'register','instance_ref':'startup-3','native_session_id':'other-session','request_key':'other-register'}})
+ assert not result.get('isError'),result
+ open(os.path.join(os.path.dirname(sys.argv[6]),'fail-reads'),'w').close()
+ result=call('tools/call',{'name':'sessions','arguments':{'action':'list'}})
+ data=result['structuredContent']
+ assert not result.get('isError') and len(data['sessions'])==1 and data['complete']==False,data
+ failed=next(source for source in data['sources'] if source['instance_ref']=='startup-3')
+ assert failed['error']['code']=='source_unavailable',failed
 finally:
  try:os.killpg(p.pid,signal.SIGKILL)
  except ProcessLookupError:pass

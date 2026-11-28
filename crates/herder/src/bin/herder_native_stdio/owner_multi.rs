@@ -278,7 +278,11 @@ impl ServerHandler for MultiOwner {
             let result = binding.server.call_tool(request.clone(), ctx.clone()).await?;
             let CallToolResponse::Complete(result) = result else { return Err(unavailable()); };
             if result.is_error == Some(true) {
-                if !binding.adapter_available {
+                let unavailable_session_source = field == "sessions"
+                    && result.structured_content.as_ref()
+                        .and_then(|error| error.get("code"))
+                        .and_then(Value::as_str) == Some("source_unavailable");
+                if !binding.adapter_available || unavailable_session_source {
                     complete = false;
                     sources.push(json!({"instance_ref":binding.instance.instance_id,"error":result.structured_content}));
                     continue;
