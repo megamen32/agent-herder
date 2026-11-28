@@ -667,9 +667,18 @@ def scheduler_source(git_dir, proposed, migration, receipt):
         and kinds == ["codex"]
         and set(migration.get("registration", {})) == {"remote_codex_binding"}
     )
+    # profile_migration has re-derived each protected profile from its predecessor.
+    # An existing native browser must follow the core executable on a Rust-only build.
+    core_rebind = (
+        migration is not None and migration.get("schema") == 2
+        and migration.get("type") == "herder-native-profile-rebind"
+        and kinds == [] and migration.get("bindings") == {} and "registration" not in migration
+        and migration.get("profiles")
+        and all(row.get("kind") in candidate.BROWSER_KINDS for row in migration["profiles"])
+    )
     # A browser-only rebind retains the existing authority and uses the same
     # scheduler compatibility proof as a Rust recovery update.
-    if migration is not None and migration.get("kind") != "recovery" and not (browser_migration or remote_registration):
+    if migration is not None and migration.get("kind") != "recovery" and not (browser_migration or remote_registration or core_rebind):
         return source
     installed = receipt.get("response", {}).get("runtime", {}).get("source_commit")
     if installed == source or (installed is None and migration is None):
