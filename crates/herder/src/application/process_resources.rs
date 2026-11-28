@@ -48,30 +48,54 @@ impl ProcessResourceApplication {
         let migration = crate::ownership::migration_hold::read(authority, resource_ref, Authorization::Authorized)?;
         let occupancy = claim::read_execution_binding(authority, resource_ref, Authorization::Authorized)?;
         let (dir, _) = authority.read_local_resource_marker(resource_ref, Authorization::Authorized)?;
-        let now = claim::now_seconds()?;
-        let declarations = self.read_declarations(&dir, resource_ref)?.into_iter().map(|record| {
-            let expired = claim::parse_expiry_seconds(&record.expires_at)? <= now;
-            Ok(json!({"declaration":record,"expired":expired,"advisory":true}))
-        }).collect::<io::Result<Vec<_>>>()?;
-        Ok(json!({"resource":descriptor,"claim":owner,"claim_live":live,
-            "execution_binding":occupancy,"migration_occupancy":migration,"declarations":declarations}))
+        let declarations = (|| {
+            let now = claim::now_seconds()?;
+            self.read_declarations(&dir, resource_ref)?.into_iter().map(|record| {
+                let expired = claim::parse_expiry_seconds(&record.expires_at)? <= now;
+                Ok(json!({"declaration":record,"expired":expired,"advisory":true}))
+            }).collect::<io::Result<Vec<_>>>()
+        })();
+        let mut snapshot = json!({"resource":descriptor,"claim":owner,"claim_live":live,
+            "execution_binding":occupancy,"migration_occupancy":migration,"declarations":[]});
+        // Optional coordination metadata must not hide canonical ownership or
+        // make one unavailable declaration store fail the entire resource list.
+        match declarations {
+            Ok(records) => snapshot["declarations"] = json!(records),
+            Err(error) => {
+                snapshot["declarations_unavailable"] = json!(true);
+                snapshot["declarations_error"] = json!(error.to_string());
+            }
+        }
+        Ok(snapshot)
     }
 
     fn declare(&self, principal: &PrincipalId, resource_ref: &ResourceRef, operation: Declaration) -> io::Result<Value> {
         let authority = &self.config.resources;
         registry::get(authority, resource_ref, Authorization::Authorized)?;
         let (dir, marker) = authority.read_local_resource_marker(resource_ref, Authorization::Authorized)?;
-        let guard = OpenOptions::new().read(true).write(true).create(true).mode(0o600).open(dir.join("declarations.lock"))?;
-        guard.lock()?;
+        if let Declaration::Set { worktree, scope, purpose, expires_at } = &operation {
+            if !Path::new(worktree).is_absolute() || [worktree.as_str(),scope.as_str(),purpose.as_str()].iter().any(|v|v.is_empty() || v.len()>4096)
+                || claim::parse_expiry_seconds(expires_at)? <= claim::now_seconds()? {
+                return Err(io::Error::new(io::ErrorKind::InvalidInput, "declaration needs an absolute worktree, scope, purpose and future expiry"));
+            }
+        }
+        let guard = match OpenOptions::new().read(true).write(true).create(true).mode(0o600).open(dir.join("declarations.lock")) {
+            Ok(guard) => guard,
+            Err(error) => return Ok(declaration_unavailable(error)),
+        };
+        // This advisory writer runs on the request path. Never wait for a
+        // competing writer, and never report a skipped declaration as recorded.
+        if let Err(error) = guard.try_lock() {
+            return Ok(declaration_unavailable(error));
+        }
         let (current_dir, current_marker) = authority.read_local_resource_marker(resource_ref, Authorization::Authorized)?;
         if current_dir != dir || current_marker != marker { return Err(invalid("resource changed before declaration")); }
-        let mut declarations = self.read_declarations(&dir, resource_ref)?;
+        let mut declarations = match self.read_declarations(&dir, resource_ref) {
+            Ok(records) => records,
+            Err(error) => return Ok(declaration_unavailable(error)),
+        };
         let result = match operation {
             Declaration::Set { worktree, scope, purpose, expires_at } => {
-                if !Path::new(&worktree).is_absolute() || [worktree.as_str(),scope.as_str(),purpose.as_str()].iter().any(|v|v.is_empty() || v.len()>4096)
-                    || claim::parse_expiry_seconds(&expires_at)? <= claim::now_seconds()? {
-                    return Err(io::Error::new(io::ErrorKind::InvalidInput, "declaration needs an absolute worktree, scope, purpose and future expiry"));
-                }
                 let declaration_ref = self.declaration_ref(resource_ref, &principal.0, &worktree, &scope);
                 let record = AdvisoryDeclaration { declaration_ref:declaration_ref.clone(),resource_ref:resource_ref.clone(),
                     principal_ref:principal.0.clone(),worktree,scope,purpose,expires_at };
@@ -92,7 +116,9 @@ impl ProcessResourceApplication {
             }
         };
         declarations.sort_by(|a,b|a.declaration_ref.cmp(&b.declaration_ref));
-        write_declarations(&dir, &declarations)?;
+        if let Err(error) = write_declarations(&dir, &declarations) {
+            return Ok(declaration_unavailable(error));
+        }
         Ok(result)
     }
 
@@ -198,6 +224,10 @@ fn write_declarations(dir:&Path, records:&[AdvisoryDeclaration]) -> io::Result<(
     result
 }
 
+fn declaration_unavailable(error:impl std::fmt::Display)->Value {
+    json!({"status":"unavailable","advisory":true,"reason":error.to_string()})
+}
+
 fn invalid(e:impl std::fmt::Display)->io::Error {io::Error::new(io::ErrorKind::InvalidData,e.to_string())}
 fn error_result(error:io::Error)->CallToolResult {CallToolResult::error(vec![ContentBlock::text(error.to_string())])}
 
@@ -279,5 +309,90 @@ mod tests {
         assert_eq!(snapshot["declarations"][0]["expired"],false);
         value(f.call("alice",remove).await);
         assert_eq!(f.config.resources.read_owner_bytes(&resource(),Authorization::Authorized).unwrap(),owner_before);
+    }
+
+    #[tokio::test]
+    async fn unavailable_declarations_preserve_resource_snapshots_and_ownership() {
+        let f=Fixture::new();f.initialize();f.register().await;
+        value(f.call("bob",Resource::Claim {resource_ref:resource(),purpose:"actual owner".into(),
+            request_key:"bob-request".into(),expires_at:Some("2099-01-01T00:00:00Z".into())}).await);
+        let owner_before=f.config.resources.read_owner_bytes(&resource(),Authorization::Authorized).unwrap();
+        let (dir,_)=f.config.resources.read_local_resource_marker(&resource(),Authorization::Authorized).unwrap();
+        let healthy=value(f.call("alice",Resource::Get {resource_ref:resource()}).await);
+        assert_eq!(healthy["declarations"],json!([]));
+        fs::write(dir.join("declarations.json"),b"corrupt advisory metadata").unwrap();
+        let snapshot=value(f.call("alice",Resource::Get {resource_ref:resource()}).await);
+        assert_eq!(snapshot["claim"],healthy["claim"]);
+        assert_eq!(snapshot["claim_live"],true);
+        assert_eq!(snapshot["declarations"],json!([]));
+        assert_eq!(snapshot["declarations_unavailable"],true);
+        assert!(snapshot["declarations_error"].is_string());
+        let listed=value(f.call("alice",Resource::List {scope:None,kind:None,cursor:None}).await);
+        assert_eq!(listed["resources"][0],snapshot);
+        assert_eq!(f.call("mallory",Resource::Get {resource_ref:resource()}).await.is_error,Some(true));
+        assert_eq!(f.config.resources.read_owner_bytes(&resource(),Authorization::Authorized).unwrap(),owner_before);
+        assert_eq!(fs::read(dir.join("declarations.json")).unwrap(),b"corrupt advisory metadata");
+    }
+
+    #[tokio::test]
+    async fn busy_advisory_lock_returns_without_blocking_or_claiming_success() {
+        let f=Fixture::new();f.initialize();f.register().await;
+        let (dir,_)=f.config.resources.read_local_resource_marker(&resource(),Authorization::Authorized).unwrap();
+        let guard=OpenOptions::new().read(true).write(true).create(true).mode(0o600)
+            .open(dir.join("declarations.lock")).unwrap();
+        guard.lock().unwrap();
+        let config=f.config.clone();
+        let (tx,rx)=std::sync::mpsc::channel();
+        let operation=Declaration::Set {worktree:"/fixture/worktree".into(),scope:"src".into(),
+            purpose:"review only".into(),expires_at:"2099-01-01T00:00:00Z".into()};
+        let retry=operation.clone();
+        let worker=std::thread::spawn(move || {
+            let result=ProcessResourceApplication::new(config).unwrap()
+                .declare(&PrincipalId("alice".into()),&resource(),operation);
+            tx.send(result).unwrap();
+        });
+        // Release the fixture lock even on the buggy implementation so RED
+        // cannot leave a blocked thread or hang the test runner.
+        let response=rx.recv_timeout(std::time::Duration::from_secs(1));
+        guard.unlock().unwrap();
+        worker.join().unwrap();
+        let response=response.expect("advisory declaration waited for another writer").unwrap();
+        assert_eq!(response["status"],"unavailable");
+        assert_eq!(response["advisory"],true);
+        assert!(response["reason"].is_string());
+        assert!(!dir.join("declarations.json").exists());
+        assert!(claim::read_current(&f.config.resources,&resource(),Authorization::Authorized).unwrap().is_none());
+        assert_eq!(value(f.call("alice",Resource::Declare {resource_ref:resource(),declaration:retry}).await)["status"],"declared");
+    }
+
+    #[tokio::test]
+    async fn failed_advisory_storage_is_reported_without_overwriting_metadata() {
+        for failure in ["corrupt_metadata","unopenable_lock","nonregular_metadata"] {
+            let f=Fixture::new();f.initialize();f.register().await;
+            let (dir,_)=f.config.resources.read_local_resource_marker(&resource(),Authorization::Authorized).unwrap();
+            match failure {
+                "corrupt_metadata"=>fs::write(dir.join("declarations.json"),b"corrupt advisory metadata").unwrap(),
+                "unopenable_lock"=>fs::create_dir(dir.join("declarations.lock")).unwrap(),
+                "nonregular_metadata"=>fs::create_dir(dir.join("declarations.json")).unwrap(),
+                _=>unreachable!(),
+            }
+            let declaration=Resource::Declare {resource_ref:resource(),declaration:Declaration::Set {
+                worktree:"/fixture/worktree".into(),scope:"src".into(),purpose:"review only".into(),
+                expires_at:"2099-01-01T00:00:00Z".into()}};
+            let response=value(f.call("alice",declaration).await);
+            assert_eq!(response["status"],"unavailable","{failure}");
+            assert_eq!(response["advisory"],true);
+            assert!(response["reason"].is_string());
+            assert!(claim::read_current(&f.config.resources,&resource(),Authorization::Authorized).unwrap().is_none());
+            if failure=="corrupt_metadata" {
+                assert_eq!(fs::read(dir.join("declarations.json")).unwrap(),b"corrupt advisory metadata");
+            }
+            let invalid_request=Resource::Declare {resource_ref:resource(),declaration:Declaration::Set {
+                worktree:"relative-path".into(),scope:"src".into(),purpose:"review only".into(),
+                expires_at:"2099-01-01T00:00:00Z".into()}};
+            let invalid=f.call("alice",invalid_request).await;
+            assert_eq!(invalid.is_error,Some(true));
+            assert!(format!("{invalid:?}").contains("absolute worktree"));
+        }
     }
 }
