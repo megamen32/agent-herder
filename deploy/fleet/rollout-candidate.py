@@ -823,6 +823,8 @@ def main() -> int:
         # The live release of a fleet node lives on that node: it is read
         # there, not guessed here.
         live_sha = remote_live_sha(node)
+        if not arguments.dry_run and not re.fullmatch(r"[a-f0-9]{40}", live_sha):
+            raise RuntimeError("legacy_remote_rollout_requires_existing_verified_release")
 
     try:
         if node["kind"] == "owner":

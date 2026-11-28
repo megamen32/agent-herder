@@ -650,9 +650,15 @@ def scheduler_source(git_dir, proposed, migration, receipt):
         and migration.get("type") == "herder-native-profile-rebind"
         and kinds and set(kinds) <= candidate.BROWSER_KINDS
     )
+    remote_registration = (
+        migration is not None and migration.get("schema") == 2
+        and migration.get("type") == "herder-native-profile-rebind"
+        and kinds == ["codex"]
+        and set(migration.get("registration", {})) == {"remote_codex_binding"}
+    )
     # A browser-only rebind retains the existing authority and uses the same
     # scheduler compatibility proof as a Rust recovery update.
-    if migration is not None and migration.get("kind") != "recovery" and not browser_migration:
+    if migration is not None and migration.get("kind") != "recovery" and not (browser_migration or remote_registration):
         return source
     installed = receipt.get("response", {}).get("runtime", {}).get("source_commit")
     if installed == source or (installed is None and migration is None):

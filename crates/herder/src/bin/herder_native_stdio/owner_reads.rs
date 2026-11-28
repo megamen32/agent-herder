@@ -22,7 +22,7 @@
 use super::owner_policy::OwnerPolicy;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use herder::{
-    adapters::ahap_opencode::AhapOpenCode,
+    adapters::{ahap_opencode::AhapOpenCode, opencode::read::OpenCodeSessionReader},
     application::scoped_stop::{
         ScopedAuthority,
         create_prompt::FreshSessionGrantPolicy,
@@ -622,6 +622,17 @@ fn registered_listing(
     }
     let corpus = registered(identity, policy, instance)?;
     let observed = observation(&corpus)?;
+    project_registered_listing(identity, policy, instance, project_ref, corpus, observed)
+}
+
+fn project_registered_listing(
+    identity: &ConnectionIdentity,
+    policy: &OwnerPolicy,
+    instance: &InstanceRef,
+    project_ref: Option<&str>,
+    corpus: Corpus,
+    observed: BTreeMap<String, Value>,
+) -> ReadResult<Value> {
     let authority = ScopedAuthority::new(
         policy.db.clone(),
         policy.gate.clone(),
@@ -658,6 +669,63 @@ fn registered_listing(
         "scope":"authorized_registered_sessions","native_coverage_complete":observed.len()==corpus.sessions.len(),
         "limitations":if complete {vec![]} else {vec!["Registry bound or missing native metadata limits coverage."]}}),
     )
+}
+
+pub(super) async fn native_opencode_registered_list(
+    identity: &ConnectionIdentity,
+    request: &catalog::Request,
+    policy: &OwnerPolicy,
+    reader: OpenCodeSessionReader,
+) -> Option<CallToolResult> {
+    let catalog::Request::Sessions(catalog::Sessions::List {
+        project_ref,
+        node_ref,
+        instance_ref,
+        cursor,
+    }) = request else {
+        return None;
+    };
+    let instance = &policy.instance;
+    let result = async {
+        if !matches!(identity.caller(), Caller::Principal(p) if p.id == policy.principal) {
+            return Err("unauthorized");
+        }
+        if cursor.is_some() {
+            return Err("unsupported_cursor");
+        }
+        if node_ref.as_ref().is_some_and(|value| value != &instance.node.0)
+            || instance_ref.as_ref().is_some_and(|value| value != &instance.instance_id)
+        {
+            return Err("invalid_instance");
+        }
+        let corpus = registered(identity, policy, instance)?;
+        let mut observed = BTreeMap::new();
+        if !corpus.sessions.is_empty() {
+            let page = reader.list_recent_sessions("herder-owner-registered-list", None, CORPUS_LIMIT as u32)
+                .await.map_err(|_| "source_unavailable")?;
+            for session in page.sessions {
+                let id = session.address.native_session_id;
+                if !corpus.sessions.iter().any(|(_, address)| address.native_session_id == id) {
+                    continue;
+                }
+                let status = if session.time.busy.is_some() { "running" }
+                    else if session.time.idle.is_some() { "idle" }
+                    else { "unknown" };
+                let mut row = json!({"id":id, "harness":"opencode", "cwd":session.directory, "status":status});
+                if let Some(model) = session.model {
+                    row["model"] = json!(model);
+                }
+                if observed.insert(id, row).is_some() {
+                    return Err("ambiguous_native_identity");
+                }
+            }
+        }
+        project_registered_listing(identity, policy, instance, project_ref.as_deref(), corpus, observed)
+    }.await;
+    Some(match result {
+        Ok(value) => CallToolResult::structured(value),
+        Err(code) => error(code),
+    })
 }
 
 pub(super) fn codex_registered_list(
