@@ -1,3 +1,4 @@
+import { sessionMessagesResourceUri } from "../herder-resource-uris.js";
 import { LOCAL_RECOVERY_WAIT_PATH, observeInstalledRecoveryWait } from "../process-wait-gate.js";
 import { CANONICAL_RUNTIME_STATUS_PATH, CanonicalRuntimeStatusError, parseCanonicalRuntimeStatusRequest, type CanonicalRuntimeStatusSource } from "../canonical-runtime-status.js";
 import {incidentSessionPolicy} from '../automation/incident-session-router.js';
@@ -3459,7 +3460,11 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     if (route.kind === "deny") return sendJson(response, 409, { error: "Project-scoped session binding could not be verified." });
     await refreshCodexTurn(events, route.adapters.get("codex"), id).catch(() => {});
     response.setHeader("cache-control", "no-store");
-    return sendJson(response, 200, completionStatus(events, id));
+    const status = completionStatus(events,id);
+    if(url.searchParams.get("includeMessages")==="1"){
+      return sendJson(response,200,{...status,messageRevision:events.revision(sessionMessagesResourceUri("codex",id))});
+    }
+    return sendJson(response, 200, status);
   }
 
   if (request.method === "GET" && url.pathname === "/api/events") {

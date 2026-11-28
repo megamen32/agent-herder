@@ -1,4 +1,5 @@
-import type { HerderEventBus } from "./herder-events.js";
+import { sessionMessagesResourceUri } from "./herder-resource-uris.js";
+import type { HerderEvent, HerderEventBus } from "./herder-events.js";
 import type { HarnessAdapter } from "./types/index.js";
 
 export interface CodexTurnState {
@@ -34,7 +35,7 @@ export async function refreshCodexTurn(bus: HerderEventBus, adapter: HarnessAdap
 }
 
 export async function awaitCompletion(bus: HerderEventBus, ids: string[], after: number | undefined,
-  timeoutMs: number, signal: AbortSignal, resolveAdapter?: (id: string) => Promise<HarnessAdapter | undefined>) {
+  timeoutMs: number, signal: AbortSignal, resolveAdapter?: (id: string) => Promise<HarnessAdapter | undefined>, includeMessages = false) {
   const watched = new Set(ids);
   const deadline = Date.now() + timeoutMs;
   const adapters = new Map<string, HarnessAdapter | undefined>();
@@ -49,9 +50,16 @@ export async function awaitCompletion(bus: HerderEventBus, ids: string[], after:
   }
   const oldest = bus.oldestSequence();
   const truncated = after !== undefined && oldest !== null && after < oldest - 1;
-  const result = (sequence: number, turn: CodexTurnState | null) => ({completion: turn, cursor: sequence, truncated});
+  const messageUris = new Set(ids.map(id=>sessionMessagesResourceUri("codex",id)));
+  const isMessage = (event:HerderEvent) => includeMessages && messageUris.has(event.uri);
+  const result = (sequence: number, turn: CodexTurnState | null, message?:HerderEvent) =>
+    ({completion: turn, cursor: sequence, truncated, ...(message ? {message} : {})});
   if (after !== undefined) {
     const event = bus.firstCompletionAfter(after, watched);
+    if(includeMessages){
+      const first = [...messageUris].flatMap(uri=>bus.listAfter(after,1,uri)).sort((a,b)=>a.sequence-b.sequence)[0];
+      if(first && (!event || first.sequence<event.sequence)) return result(first.sequence,null,first);
+    }
     if (event?.turn) return result(event.sequence, event.turn);
   } else {
     // The first result must not advance the cursor past another ready thread.
@@ -70,6 +78,7 @@ export async function awaitCompletion(bus: HerderEventBus, ids: string[], after:
     };
     const abort = () => { cleanup(); reject(new Error("Completion wait cancelled")); };
     const unsubscribe = bus.subscribe(event => {
+      if (isMessage(event) && event.sequence > (after ?? 0)) { cleanup();resolve(result(event.sequence,null,event));return; }
       if (event.turn?.state !== "finished" || !watched.has(event.turn.sessionId) || event.sequence <= (after ?? 0)) return;
       cleanup();
       resolve(result(event.sequence, event.turn));

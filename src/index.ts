@@ -783,7 +783,7 @@ function registerTools(
       : undefined,
   });
   registerBackgroundTools(server, { browserWakeService, jobs, sessionConverter });
-  registerSessionTools(server, { adapters, jobs, events, trustedIngress:trustedMeshIngress, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, deliveryPolicy: readLaunchPolicyStateForGate, canonicalClient, userMessageDelivery, sessionQueueControl, resumeAfter, ...(inventorySupervisor ? { supervisor: inventorySupervisor } : {}) });
+  registerSessionTools(server, { adapters, jobs, events, trustedIngress:trustedMeshIngress, pendingQuestions:async()=>new Set((await humanRequests.list("pending")).map(row=>JSON.stringify([row.target.agent??row.target.harness,row.target.sessionId]))), integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, deliveryPolicy: readLaunchPolicyStateForGate, canonicalClient, userMessageDelivery, sessionQueueControl, resumeAfter, ...(inventorySupervisor ? { supervisor: inventorySupervisor } : {}) });
   registerRagTools(server, adapters);
   registerResourceOwnershipTools(server);
   registerProjectReleaseTools(server);

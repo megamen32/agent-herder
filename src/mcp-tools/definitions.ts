@@ -94,6 +94,7 @@ export const MeshSenderSchema = z.object({
 }).strict();
 
 export const SendMessageSchema = z.object({
+  awaitMs:z.number().int().min(1).max(50000).optional().describe("Bound the entire local send-and-await call. Requires stable inputId and exact harness; continue observation with the returned cursor."),
   humanCitations,
   attachments: z.never().optional().describe("Inline files require an exact target and sender."),
   inputId: z.string().min(1).max(256).optional().describe("Stable delivery ID. Retry with the same ID; Codex deduplicates native admission for 24 hours."),

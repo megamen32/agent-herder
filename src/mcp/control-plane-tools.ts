@@ -86,11 +86,11 @@ export function registerControlPlaneTools(server: McpServer, deps: {
   }, async (args) => structuredResult({ job: jobs.cancel(args.jobId) }));
 
   server.registerTool("session_await", {
-    description: "Wait for any watched native Codex thread to finish a turn. Omit afterSequence for current status, then pass the returned cursor. A timeout returns completion:null. On truncated replay, read current status.",
+    description: "Wait for any watched native Codex thread to finish a turn. Omit afterSequence for current status, then pass the returned cursor. Set includeMessages:true to also receive session message updates. A timeout returns completion:null without a message. On truncated replay, read current status.",
     inputSchema: z.object({ sessionIds: z.array(z.string().min(1).max(512)).min(1).max(32),
-      afterSequence: z.number().int().nonnegative().optional(), timeoutMs: z.number().int().min(0).max(50000).default(45000) }),
+      includeMessages:z.boolean().default(false), afterSequence: z.number().int().nonnegative().optional(), timeoutMs: z.number().int().min(0).max(50000).default(45000) }),
   }, async (args, ctx) => structuredResult(await awaitCompletion(events, args.sessionIds, args.afterSequence,
-    args.timeoutMs, ctx.mcpReq.signal, deps.completionAdapter)));
+    args.timeoutMs, ctx.mcpReq.signal, deps.completionAdapter,args.includeMessages)));
 
   server.registerTool("event_list", {
     description: "Replay Agent Herder domain events after a global sequence cursor. Use afterSequence from the last seen event; uriPrefix narrows replay to one resource subtree.",

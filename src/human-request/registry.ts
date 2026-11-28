@@ -30,6 +30,8 @@ export interface HumanRequestTarget {
 }
 
 export interface CreateHumanRequestInput {
+  decisionKey?: string;
+  decisionFingerprint?: string;
   kind: HumanRequestKind;
   target: HumanRequestTarget;
   /** Default `human_channel`; only the question-binding seam sets it explicitly. */
@@ -109,6 +111,8 @@ export interface ResumeAdmissionReceipt {
 }
 
 export interface HumanRequestRecord {
+  decisionKey?: string;
+  decisionFingerprint?: string;
   requestId: string;
   kind: HumanRequestKind;
   target: HumanRequestTarget;
@@ -303,7 +307,15 @@ export class HumanRequestRegistry {
     const contextRef = opaqueRef(input.contextRef, "contextRef");
     return this.mutate(async () => {
       const file = await this.read();
+      if (input.decisionKey) {
+        const previous=file.requests.find(row=>row.decisionKey===input.decisionKey);
+        if(previous){
+          if(previous.decisionFingerprint!==input.decisionFingerprint) throw new Error("Decision request key conflict");
+          return cloneRecord(previous);
+        }
+      }
       const record: HumanRequestRecord = {
+        ...(input.decisionKey ? {decisionKey:input.decisionKey,decisionFingerprint:input.decisionFingerprint} : {}),
         requestId: randomUUID(),
         kind: input.kind,
         target,

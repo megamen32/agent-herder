@@ -111,6 +111,13 @@ export function createNativeUserInputNoticeObserver(registry: HumanRequestRegist
 export async function readCanonicalNativeUserAnswer(record: HumanRequestRecord, target: Pick<NativeUserInputTarget, "hostId" | "harness" | "sessionId">, producer: AskHumanProducer, fetchImpl: typeof fetch) {
   if (record.notify?.project !== producer.project || record.notify.recipient !== producer.recipient || record.kind !== "user"
     || (record.target.agent ?? record.target.harness) !== target.harness || record.target.sessionId !== target.sessionId) throw new Error("native input Notice routing mismatch");
+  return readNoticeUserAnswer(record,producer,fetchImpl);
+}
+
+/** Read a bound non-secret question from its configured producer. */
+export async function readNoticeUserAnswer(record:HumanRequestRecord,producer:AskHumanProducer,fetchImpl:typeof fetch) {
+  if(record.kind!=="user" || record.answerSource!=="notice_question") throw new Error("Canonical result requires a Notice user question");
+  const target={harness:record.target.agent??record.target.harness,sessionId:record.target.sessionId};
   const url = new URL(producer.endpoint);
   if (!url.pathname.replace(/\/$/, "").endsWith("/v1/human-requests")) throw new Error("canonical answer endpoint unavailable");
   url.pathname = `${url.pathname.replace(/\/$/, "")}/${encodeURIComponent(record.requestId)}/result`; url.search = ""; url.hash = "";

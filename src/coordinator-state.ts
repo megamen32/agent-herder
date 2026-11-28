@@ -11,6 +11,7 @@ export function coordinatorTransaction<T>(run: (db: DatabaseSync) => T): T {
   try {
     db.exec(`PRAGMA busy_timeout=3000;
       BEGIN IMMEDIATE;
+      CREATE TABLE IF NOT EXISTS human_inputs(harness TEXT,session TEXT,cwd TEXT,event TEXT,at TEXT,body TEXT,PRIMARY KEY(harness,session,cwd,event));
       CREATE TABLE IF NOT EXISTS citation_receipts(id TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS memory(project TEXT PRIMARY KEY, revision INTEGER NOT NULL, body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS workers(project TEXT, harness TEXT, session TEXT, title TEXT, state TEXT, prs TEXT DEFAULT '[]', PRIMARY KEY(project,harness,session));
@@ -20,10 +21,22 @@ export function coordinatorTransaction<T>(run: (db: DatabaseSync) => T): T {
     const result = run(db);
     db.exec("COMMIT");
     return result;
-  } finally { db.close(); }
+  } finally {
+    db.close();
+  }
 }
 
-export function trackWorker(project: string, harness: string, session: string, title: string) {
-  coordinatorTransaction(db => db.prepare("INSERT OR IGNORE INTO workers(project,harness,session,title,state) VALUES(?,?,?,?,'working')")
-    .run(project, harness, session, title));
+export function trackWorker(
+  project: string,
+  harness: string,
+  session: string,
+  title: string,
+) {
+  coordinatorTransaction((db) =>
+    db
+      .prepare(
+        "INSERT OR IGNORE INTO workers(project,harness,session,title,state) VALUES(?,?,?,?,'tracking')",
+      )
+      .run(project, harness, session, title),
+  );
 }
