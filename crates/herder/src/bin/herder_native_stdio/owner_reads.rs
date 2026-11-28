@@ -708,9 +708,11 @@ pub(super) async fn native_opencode_registered_list(
                 if !corpus.sessions.iter().any(|(_, address)| address.native_session_id == id) {
                     continue;
                 }
-                let status = if session.time.busy.is_some() { "running" }
-                    else if session.time.idle.is_some() { "idle" }
-                    else { "unknown" };
+                let status = match session.time.is_busy() {
+                    Some(true) => "running",
+                    Some(false) => "idle",
+                    None => "unknown",
+                };
                 let mut row = json!({
                     "id":id, "harness":"opencode", "cwd":session.directory, "status":status,
                     "hostId":instance.node.0, "needsPermission":session.needs_permission.unwrap_or(false)
