@@ -12,8 +12,16 @@ import sys
 
 ENV_FILE = Path("/etc/gptadmin/nodes/primary.env")
 BEARER_NAME = "GPTADMIN_AVAILABILITY_MONITOR_MCP_BEARER"
-ENDPOINT = "/server/shell-roomhacker-server-100-agentherder/mcp"
+ENDPOINT = "/mcp"
 MAX_RESPONSE_BYTES = 1024 * 1024
+
+# The registered control path reaches the owner even when a quorum follower has
+# no projected child catalog for scoped tools/list. Only the catalog is requested.
+CATALOG_LOOKUP = """const catalog = await mcp.call('control:roomhacker-server-100', 'mcp_tools', {ref: 'AgentHerder'});
+return {
+  schema_complete: catalog.schema_complete === true,
+  tool_names: Array.isArray(catalog.tools) ? catalog.tools.map(tool => tool.name) : []
+};"""
 
 
 def read_bearer(path):
@@ -75,10 +83,20 @@ def activate(connection, bearer):
         raise ReadinessFailure("missing negotiated MCP protocol")
     headers["MCP-Protocol-Version"] = initialized["protocolVersion"]
     rpc("notifications/initialized", {})
-    catalog = rpc("tools/list", {}, 2)
-    names = {tool["name"] for tool in catalog["tools"]}
-    if not {"discover", "session", "stop"} <= names:
-        raise ReadinessFailure("tools/list is missing required Rust tools")
+    lookup = rpc("tools/call", {"name": "exec", "arguments": {
+        "code": CATALOG_LOOKUP, "max_output_bytes": 4096,
+    }}, 2)
+    execution = lookup.get("structuredContent")
+    if lookup.get("isError") or not isinstance(execution, dict) or execution.get("status") != "completed":
+        raise ReadinessFailure("registered MCP catalog lookup did not complete")
+    catalog = execution.get("result")
+    if not isinstance(catalog, dict) or catalog.get("schema_complete") is not True:
+        raise ReadinessFailure("registered MCP catalog lookup returned an incomplete schema")
+    names = catalog.get("tool_names")
+    if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
+        raise ReadinessFailure("registered MCP catalog lookup returned invalid tool names")
+    if not {"discover", "session", "stop"} <= set(names):
+        raise ReadinessFailure("registered MCP catalog is missing required Rust tools")
 
 
 def main():

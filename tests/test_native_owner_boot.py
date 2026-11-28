@@ -19,24 +19,65 @@ def response(status, body=None, **headers):
     return reply
 
 
+def handshake_responses():
+    return [
+        response(200, {"id": 1, "result": {"protocolVersion": "2025-03-26"}},
+                 **{"Mcp-Session-Id": "fixture-session"}),
+        response(204),
+    ]
+
+
+def catalog_reply(*names, complete=True, status="completed", is_error=False):
+    return {"id": 2, "result": {"isError": is_error, "structuredContent": {
+        "status": status, "result": {"schema_complete": complete, "tool_names": list(names)},
+    }}}
+
+
 class NativeOwnerBootTest(unittest.TestCase):
-    def test_activate_uses_only_the_registered_mcp_readiness_methods(self):
+    def test_activate_uses_registered_control_lookup_through_root_mcp(self):
+        # A quorum follower can own the process while its scoped child catalog is absent.
         connection = Mock()
-        handshake = {"id": 1, "result": {"protocolVersion": "2025-03-26"}}
-        catalog = {"id": 2, "result": {"tools": [{"name": name} for name in ("discover", "session", "stop")]}}
-        connection.getresponse.side_effect = [
-            response(200, handshake, **{"Mcp-Session-Id": "fixture-session"}),
-            response(204),
-            response(200, catalog),
+        connection.getresponse.side_effect = handshake_responses() + [
+            response(200, catalog_reply("discover", "session", "stop")),
         ]
 
         boot.activate(connection, "fixture-bearer")
 
         calls = connection.request.call_args_list
-        self.assertEqual([call.args[:2] for call in calls], [("POST", boot.ENDPOINT)] * 3)
-        self.assertEqual([json.loads(call.args[2])["method"] for call in calls],
-                         ["initialize", "notifications/initialized", "tools/list"])
+        self.assertEqual([call.args[:2] for call in calls], [("POST", "/mcp")] * 3)
+        payloads = [json.loads(call.args[2]) for call in calls]
+        self.assertEqual([payload["method"] for payload in payloads],
+                         ["initialize", "notifications/initialized", "tools/call"])
+        self.assertEqual(payloads[-1]["params"]["name"], "exec")
+        lookup = payloads[-1]["params"]["arguments"]["code"]
+        self.assertIn("'control:roomhacker-server-100'", lookup)
+        self.assertIn("'mcp_tools'", lookup)
+        self.assertIn("ref: 'AgentHerder'", lookup)
         self.assertEqual(calls[-1].args[3]["Mcp-Session-Id"], "fixture-session")
+
+    def test_failed_or_incomplete_lookup_cannot_report_ready(self):
+        for reply in [
+            catalog_reply("discover", "session", "stop", status="failed"),
+            catalog_reply("discover", "session", "stop", is_error=True),
+            catalog_reply("discover", "session", "stop", complete=False),
+            catalog_reply("discover", "session"),
+        ]:
+            with self.subTest(reply=reply):
+                connection = Mock()
+                connection.getresponse.side_effect = handshake_responses() + [response(200, reply)]
+                with self.assertRaises(boot.ReadinessFailure):
+                    boot.activate(connection, "fixture-bearer")
+                self.assertEqual(connection.request.call_count, 3)
+
+    def test_upstream_failure_text_is_not_in_the_lookup_diagnostic(self):
+        connection = Mock()
+        reply = {"id": 2, "result": {"isError": True, "structuredContent": {
+            "status": "failed", "error": "private upstream contents",
+        }}}
+        connection.getresponse.side_effect = handshake_responses() + [response(200, reply)]
+        with self.assertRaises(boot.ReadinessFailure) as caught:
+            boot.activate(connection, "fixture-bearer")
+        self.assertEqual(str(caught.exception), "registered MCP catalog lookup did not complete")
 
     def test_refused_handshake_does_not_dispatch_a_second_request(self):
         connection = Mock()

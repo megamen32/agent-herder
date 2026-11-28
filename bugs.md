@@ -1,5 +1,13 @@
 # Обнаруженные дефекты
 
+## 2026-11-28: scoped tools/list на follower GPTAdmin не видит локальный child
+
+- **Симптом.** Автозапуск Agent Herder на server100 проходил initialize, но tools/list возвращал `child schema owner unavailable` с `peer destination does not own the requested local executor`. Установленный GPTAdmin: build1180, commit61ce0778, режим owner_local; server100 follower, writer44.
+- **Воспроизведение.** Штатный защищённый availability credential и `POST http://127.0.0.1:9001/server/shell-roomhacker-server-100-agentherder/mcp` с tools/list. Прямой `POST /mcp-relay/tools` с `X-Gptadmin-Node-Hop: 1` и target `mcp:shell:roomhacker-server-100:AgentHerder` также возвращает502. Учётные данные в журнал не выводятся.
+- **Причина.** Локальный approved/pinned executor в registry_state.json на100 не содержит mcp_agents. `quorumLocalChildSchemaRequest` требует child в локальном exposed catalog. Полученный от writer запрос схемы поэтому снова отправляется writer, где защитный guard правильно отказывает: writer не владеет executor100. Физический s100-node endpoint ведёт на правильный узел, это подтверждено совпадающим node_id в /healthz.
+- **Локальное исправление Herder.** Boot helper использует штатный `/mcp` → `exec` → `control:roomhacker-server-100.mcp_tools(ref=AgentHerder)`. Тем же availability credential этот путь возвращает полный каталог установленного Rust child; проверяются завершённый ответ, полнота схемы и обязательные discover/session/stop. Guards, политика доступа и GPTAdmin runtime не меняются.
+- **Открытая задача GPTAdmin.** Согласовать авторизованный каталог локального embedded executor с классификацией forwarded child schema. Исправление самого scoped маршрута требует отдельного изменения и релиза GPTAdmin; не ослаблять проверку physical owner.
+
 ## 2026-11-20 — тестовый набор Agent Herder красный вне изменений лимита Codex
 
 - **Симптом.** `npx vitest run --root . --config vitest.config.ts` в рабочем дереве `codex/native-autorecovery` падает во многих файлах, не связанных с лимитом Codex: `tests/planner-route-notice.test.ts` (5), `tests/codex-resume-receipt.test.ts` (9), `tests/autopilot-core.test.ts` (17), `tests/unfinished-session-launcher-title-idempotence.test.ts` (10), `tests/recovery-admission.test.ts` (9) и другие.
