@@ -1,3 +1,6 @@
+import { registerCoordinatorTools } from "./coordinator-tools.js";
+import { renderCoordinatorMessage } from "../coordinator-citations.js";
+import { trackWorker } from "../coordinator-state.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { hostname } from "node:os";
 import { createHash } from "node:crypto";
@@ -120,6 +123,7 @@ export function registerSessionTools(server: McpServer, deps: {
   /** Peer transport used to verify a work directory on another machine. */
   transport?: GptAdminTransport;
   /** Peers this process may call. Defaults to the fleet; a unit test narrows it to nobody. */
+  trustedIngress?: ReturnType<typeof trustedMeshIngressFromMcpAuthInfo>;
   routingPeers?: readonly DirectPeer[];
   /** Fleet router used to retarget a session that lives on another machine. */
   fleet?: FleetSessionTargetRouter;
@@ -138,6 +142,12 @@ export function registerSessionTools(server: McpServer, deps: {
   supervisor?: Pick<SessionSupervisor, "sendMessage">;
 }): void {
   const { adapters, jobs, events } = deps;
+  registerCoordinatorTools(server,async(harness,sessionId)=>{
+    const route=await sessionRoute({harness,sessionId});
+    if(route.denied || route.hostTargetUnavailable) return null;
+    const session=await route.adapters.get(harness)?.getSession(sessionId,{includeMetrics:false});
+    return session?.id===sessionId && session.harness===harness ? session : null;
+  });
   const userMessageDelivery = deps.userMessageDelivery ?? new UserMessageDelivery(adapters, {
     sendMessage: async (harness, sessionId, options) => {
       const adapter = adapters.get(harness);
@@ -487,7 +497,7 @@ export function registerSessionTools(server: McpServer, deps: {
     const result = await readModelQuotas();
     return { content: [{ type: "text" as const, text: JSON.stringify(result) }], structuredContent: result };
   });
-  server.registerTool("agent_info", { description: "Read a session with its latest user and assistant messages by default. Use view=messages for more messages or view=compact for metadata only. For the available full transcript call export_transcript; its result is a file, not the transcript text.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), hostId: z.string().trim().min(1).max(512).optional(), view: z.enum(["recent", "compact", "messages"]).optional().default("recent"), limit: z.number().int().min(1).max(200).optional().default(20) }), outputSchema: z.object({ session: sessionSchema.nullable(), conversation: z.unknown().optional() }) }, async (args) => {
+  server.registerTool("agent_info", { description: "Read a session with its latest user and assistant messages by default. Use view=messages for more messages or view=compact for metadata only. For the available full transcript call export_transcript; its result is a file, not the transcript text.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), hostId: z.string().trim().min(1).max(512).optional(), view: z.enum(["recent", "compact", "messages","digest"]).optional().default("recent"), beforeMessageId:z.string().min(1).optional(), limit: z.number().int().min(1).max(200).optional().default(20) }), outputSchema: z.object({ session: sessionSchema.nullable(), conversation: z.unknown().optional() }) }, async (args) => {
     // Models occasionally combine the harness and exact native ID in one field.
     // Only split a known harness followed by a single ID; never guess a target.
     const prefixed = args.sessionId.trim().match(/^(\S+)\s+(\S+)$/);
@@ -512,6 +522,15 @@ export function registerSessionTools(server: McpServer, deps: {
           if (page?.sessionId === session.id) { messages = page.messages; complete = page.complete; }
         } else if (adapter?.getSessionMessages) messages = await adapter.getSessionMessages(session.id, 200);
       } catch { messages = null; }
+      if (args.view === "digest" || args.beforeMessageId) {
+        if (!messages) throw new Error("Native conversation unavailable");
+        const end = args.beforeMessageId ? messages.findIndex(m=>m.id===args.beforeMessageId) : messages.length;
+        if(end<0) throw new Error("Message cursor expired outside the available native history");
+        const start=Math.max(0,end-args.limit);
+        const page=messages.slice(start,end).map(m=>args.view==="digest" ? {id:m.id,role:m.role,text:m.text?.slice(0,240),truncated:(m.text?.length??0)>240} : m);
+        const conversation={messages:page,beforeMessageId:start>0 ? messages[start]!.id : null,historyComplete:complete===true && start===0};
+        return {content:[{type:"text" as const,text:JSON.stringify(conversation)}],structuredContent:{session,conversation}};
+      }
       const reversed = messages ? [...messages].reverse() : [];
       const humanText = (text: string | undefined) => !!text?.trim() && !/^\s*<(?:codex_internal_context|environment_context)(?:\s|>)/i.test(text);
       let latestUser = reversed.find(message => message.role === "user" && humanText(message.text)) ?? null;
@@ -792,12 +811,14 @@ export function registerSessionTools(server: McpServer, deps: {
     const harness = found?.session.harness ?? route.args.harness ?? args.harness;
     const inputId = args.inputId ?? (found ? createHash("sha256").update(JSON.stringify({
       hostId: found.session.hostId ?? "unknown", harness: found.session.harness, sessionId: found.session.id,
-      mode: args.mode, message: args.message, humanRequested: args.humanRequested === true,
+      mode: args.mode, message: args.message, humanCitations: args.humanCitations, humanRequested: args.humanRequested === true,
     })).digest("hex") : undefined);
-    const requestArgs = { ...route.args, ...(harness ? { harness } : {}), ...(inputId ? { inputId } : {}) };
+    const cursor = events.latestSequence();
+    const message = await renderCoordinatorMessage(args.message,args.humanCitations);
+    const requestArgs = { ...route.args, message, ...(harness ? { harness } : {}), ...(inputId ? { inputId } : {}) };
     let resolvedTarget: DeliveryResponseTarget | undefined;
     const result = await handleSendMessage(route.adapters, requestArgs,
-      userMessageDelivery, trustedMeshIngressFromMcpAuthInfo(ctx?.http?.authInfo), (session) => {
+      userMessageDelivery, ctx?.http ? trustedMeshIngressFromMcpAuthInfo(ctx.http.authInfo) : deps.trustedIngress, (session) => {
         if (session.hostId) resolvedTarget = { hostId: session.hostId, harness: session.harness as DeliveryResponseTarget["harness"], sessionId: session.id };
       });
     const response = harness && inputId ? await observeExistingUserDelivery(harness, args.sessionId, inputId, resolvedTarget) : undefined;
@@ -813,7 +834,7 @@ export function registerSessionTools(server: McpServer, deps: {
         : result;
     publishSessionsChanged();
     return { content: [{ type: "text" as const, text: response
-      ? JSON.stringify({ delivery, response })
+      ? JSON.stringify({ delivery, response, cursor })
       : delivery }] };
   });
   server.registerTool("create_session", { description: "Create one named OpenCode, Codex, ZCode, or Fast Agent session in an absolute canonical working directory. Codex serviceTier defaults to normal; serviceTier is rejected for other harnesses.", inputSchema: CreateSessionSchema }, async (args) => {
@@ -861,7 +882,7 @@ export function registerSessionTools(server: McpServer, deps: {
     if (hostId.toLowerCase() !== hostname().toLowerCase()) {
       const peer = selectedRemotePeer(hostId);
       if (!peer) throw new Error(`host_target_unavailable:${hostId}`);
-      if (!args.sessionId || !args.harness || !args.inputId || args.activation !== "always" || args.mode === "sync" || args.model || args.deliverIn !== undefined || args.deliverAt !== undefined || args.sourceSessionId || args.sourceHarness || args.sourceSessions?.length) throw new Error("remote_delivery_options_unsupported");
+      if (args.humanCitations || args.project || !args.sessionId || !args.harness || !args.inputId || args.activation !== "always" || args.mode === "sync" || args.model || args.deliverIn !== undefined || args.deliverAt !== undefined || args.sourceSessionId || args.sourceHarness || args.sourceSessions?.length) throw new Error("remote_delivery_options_unsupported");
       const scope = await deps.integratorRuntime?.adapterForSession({hostId:peer.hostId,harness:args.harness,nativeSessionId:args.sessionId});
       if (scope?.kind === "deny") throw new Error("project_session_scope_unavailable");
       if (scope && scope.kind !== "ordinary") throw new Error("remote_project_delivery_unsupported");
@@ -871,6 +892,8 @@ export function registerSessionTools(server: McpServer, deps: {
         return {content:[{type:"text" as const,text:JSON.stringify({ok:false,delivery:"unknown",inputId:args.inputId,admissionUnknown:true,nonRetryable:true,error:"remote_delivery_outcome_unknown"})}]};
       }
     }
+    if (args.project && (!args.name || !args.harness)) throw new Error("Project tracking requires a named target");
+    args = {...args,message:await renderCoordinatorMessage(args.message,args.humanCitations)};
     const scheduled = args.deliverIn !== undefined || args.deliverAt !== undefined;
     const deadline = scheduledDeliveryDeadline();
     const route = await (scheduled ? boundedScheduledTarget(sessionRoute(args), deadline) : sessionRoute(args));
@@ -879,7 +902,12 @@ export function registerSessionTools(server: McpServer, deps: {
     const policy = assertDeliveryModelAllowed(route.adapters, {sessionId:args.sessionId,harness:args.harness,cwd:args.cwd,model:args.model});
     await (scheduled ? boundedScheduledTarget(policy, deadline) : policy);
     if (scheduled) { const result=await scheduleDeliver(route.adapters,deps.resumeAfter,route.args,deadline);return {content:[{type:"text" as const,text:result}]}; }
-    const result=await handleDeliver(route.adapters,route.args);publishSessionsChanged();return {content:[{type:"text" as const,text:result}]};
+    const result=await handleDeliver(route.adapters,route.args);
+    if(args.project && args.name && args.harness){
+      const receipt=JSON.parse(result);
+      if(receipt.ok && receipt.sessionId) trackWorker(args.project,args.harness,receipt.sessionId,args.name);
+    }
+    publishSessionsChanged();return {content:[{type:"text" as const,text:result}]};
   });
   server.registerTool("stop_agent", { description: "Stop / abort a running agent session. A session of another machine is stopped there, through its own native session. inputId deduplicates retries of one stable stop intent; the structured receipt carries the admission state (admitted/not_attempted/unknown) and the manual-stop hold.", inputSchema: z.object({ sessionId: z.string(), harness: harnessSchema.optional(), hostId: z.string().trim().min(1).max(512).optional().describe("Machine that owns the session. Omitted stops a session of this machine."), inputId: z.string().trim().min(1).max(256).optional().describe("Stable intent key: a retried stop with the same inputId is answered from the receipt ledger instead of stopping twice.") }), outputSchema: z.object({ state: z.enum(["admitted", "not_attempted", "unknown"]), held: z.boolean(), hostId: z.string(), harness: z.string().optional(), sessionId: z.string(), reason: z.string().optional(), retryable: z.boolean().optional(), inputId: z.string().optional() }) }, async (args) => {
     const owner = typeof args.hostId === "string" ? normalizeHostId(args.hostId, hostname()) : hostname();

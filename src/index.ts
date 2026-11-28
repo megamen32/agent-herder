@@ -774,6 +774,7 @@ function registerTools(
   // A human answer resumes its exact native session exactly once through the
   // same durable admission the internal completion endpoint uses.
   registerHumanRequestTools(server, humanRequests, {
+    deliverDecision:createNoticeQuestionDelivery(process.env),
     humanResume: humanResume ?? (async (request) => new AgentResumeClient().resume(request)),
     queryReceipt: humanResumeQuery ?? ((request: ResumeTransportRequest) => boundResumeReceiptQuery(request, adapters)),
     adapters,
@@ -782,7 +783,7 @@ function registerTools(
       : undefined,
   });
   registerBackgroundTools(server, { browserWakeService, jobs, sessionConverter });
-  registerSessionTools(server, { adapters, jobs, events, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, deliveryPolicy: readLaunchPolicyStateForGate, canonicalClient, userMessageDelivery, sessionQueueControl, resumeAfter, ...(inventorySupervisor ? { supervisor: inventorySupervisor } : {}) });
+  registerSessionTools(server, { adapters, jobs, events, trustedIngress:trustedMeshIngress, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, deliveryPolicy: readLaunchPolicyStateForGate, canonicalClient, userMessageDelivery, sessionQueueControl, resumeAfter, ...(inventorySupervisor ? { supervisor: inventorySupervisor } : {}) });
   registerRagTools(server, adapters);
   registerResourceOwnershipTools(server);
   registerProjectReleaseTools(server);

@@ -34,6 +34,7 @@ const resumeSchema = z.object({
 });
 
 export interface HumanRequestToolOptions {
+  deliverDecision?: (question: import("../autopilot/index.js").PendingHumanQuestion) => Promise<void>;
   /**
    * Bound native resume of one human answer. Required: an answer must either
    * resume its exact session exactly once or fail loudly, never park a request
@@ -106,6 +107,7 @@ export function registerHumanRequestTools(
       locator: z.record(z.string(), z.unknown()).optional(), contextRef: z.string().optional(),
       permissionRequestId: z.string().min(1).max(512).optional().describe("Exact currently pending native permission request. Creates fixed Allow/Deny choices bound to this request; never used for general questions."),
       message: z.string().min(1).max(4096).optional().describe("The human-readable question. Omit it for a metadata-only request that shows no Notice card; never paste a secret value into it"),
+      recommendedChoiceId:z.string().min(1).max(64).optional().describe("Post a decision card through the configured Notice producer, marking this choice as recommended."),
       choices: z.array(z.object({ choiceId: z.string().min(1).max(64), label: z.string().min(1).max(512) })).min(2).max(4).optional(),
       notify: z.object({ project: z.string().min(1), recipient: z.string().min(1), kind: z.string().min(1), severity: z.string().min(1), title: z.string().min(1) }).optional(),
     }),
@@ -120,6 +122,8 @@ export function registerHumanRequestTools(
     }) }),
   }, async (args) => {
     if (args.harness === "hermes" && !args.locator) throw new Error("Hermes human request requires an immutable hermes.locator.v2 locator");
+    if (args.recommendedChoiceId && (args.kind !== "user" || args.permissionRequestId || !args.choices?.some(choice=>choice.choiceId===args.recommendedChoiceId) || !options.deliverDecision))
+      throw new Error("Decision requires a listed recommendation, a user question and an available Notice producer");
     if (args.permissionRequestId !== undefined) {
       if (args.kind !== "user" || !options.adapters) throw new Error("native permission questions require an available native adapter and a user request");
       const adapter = options.adapters.get(args.harness);
@@ -136,10 +140,11 @@ export function registerHumanRequestTools(
       kind: args.kind,
       target: { harness: args.harness, sessionId: args.sessionId, ...(args.cwd ? { cwd: args.cwd } : {}), ...(args.marker ? { marker: args.marker } : {}), ...(args.locator ? { locator: args.locator } : {}) },
       ...(args.message ? { message: args.message } : {}),
-      ...(args.choices ? { choices: args.choices } : {}),
+      ...(args.choices ? { choices: args.choices.map(c=>c.choiceId===args.recommendedChoiceId ? {...c,label:c.label+" (recommended)"} : c) } : {}),
       contextRef: args.contextRef,
       ...(args.notify ? { contextRef: args.contextRef ?? `noticeplace://human-request/${args.harness}/${args.sessionId}` } : {}),
     });
+    if (args.recommendedChoiceId && binding.question) await options.deliverDecision!({...binding,question:binding.question});
     const { record, ...question } = binding;
     return structuredResult({ request: record, binding: question });
   });
