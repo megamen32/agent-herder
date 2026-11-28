@@ -1,3 +1,4 @@
+import { humanCitations } from "../coordinator-citations.js";
 import { Tool } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { MAX_MODEL_LENGTH } from "../automation-launch-policy.js";
@@ -93,6 +94,8 @@ export const MeshSenderSchema = z.object({
 }).strict();
 
 export const SendMessageSchema = z.object({
+  awaitMs:z.number().int().min(1).max(50000).optional().describe("Bound the entire local send-and-await call. Requires stable inputId and exact harness; continue observation with the returned cursor."),
+  humanCitations,
   attachments: z.never().optional().describe("Inline files require an exact target and sender."),
   inputId: z.string().min(1).max(256).optional().describe("Stable delivery ID. Retry with the same ID; Codex deduplicates native admission for 24 hours."),
   humanRequested: z.boolean().optional().describe("True only for an explicit human new task/send/resume. Otherwise coordination is active-turn-only and never wakes or defers to an inactive chat."),
@@ -137,6 +140,8 @@ export const NewOrResumeSchema = NamedSessionBaseSchema.extend({
 });
 
 export const DeliverSchema = z.object({
+  humanCitations,
+  project: z.string().trim().min(1).max(512).optional().describe("Track this named worker in the project roster."),
   attachments: z.never().optional().describe("Inline files require an exact target and sender."),
   inputId: z.string().min(1).max(256).optional().describe("Stable delivery ID. Retry with the same ID; Codex deduplicates native admission for 24 hours."),
   sourceSessions: z.array(z.object({ harness: z.enum(["codex", "claude", "zcode", "opencode", "fast-agent"]), sessionId: z.string().min(1).max(512) })).max(32).optional(),

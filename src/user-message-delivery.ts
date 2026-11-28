@@ -21,7 +21,7 @@ export type UserMessageDeliveryResponseHooks={
   afterNativeReceipt?:(input:UserMessageDeliveryResponseHookInput&{receipt:SendMessageResult})=>void|Promise<void>;
 };
 const messageKey=(harness:string,sessionId:string,inputId:string)=>`${harness}\0${sessionId}\0${inputId}`;
-const userMessageJobId=(input:Pick<UserMessageInput,"harness"|"sessionId"|"inputId">)=>`job_${createHash("sha256").update(`user-message\0${messageKey(input.harness,input.sessionId,input.inputId)}`).digest("hex")}`;
+export const userMessageJobId=(input:Pick<UserMessageInput,"harness"|"sessionId"|"inputId">)=>`job_${createHash("sha256").update(`user-message\0${messageKey(input.harness,input.sessionId,input.inputId)}`).digest("hex")}`;
 const activeMinimaxTargets = new Map<string, number>();
 const activeMinimaxJobs = new Map<string, number>();
 const minimaxTargetKey = (target: MinimaxExecPolicyTarget) => createHash("sha256").update(`${target.hostId}\0${target.harness}\0${target.sessionId}`).digest("hex");

@@ -1,3 +1,4 @@
+import {recordComposerInput} from "../coordinator-citations.js";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { hostname } from "node:os";
@@ -96,7 +97,10 @@ export async function readOptionalGoal(store: GoalStore, identity: GoalIdentity)
 export async function recordGoalHumanInput(input: { harness: string; sessionId: string; cwd: string; text: string; inputId?: string; hasImages?: boolean }): Promise<void> {
   const identity = { harness: input.harness, sessionId: input.sessionId, cwd: resolve(input.cwd) };
   const goal = await readOptionalGoal(defaultStore, identity);
-  if (!goal?.armed || goal.stopped) return;
+  if (!goal?.armed || goal.stopped) {
+    if(input.text.trim()) recordComposerInput(identity,input.text,input.inputId);
+    return;
+  }
   const eventId = `human-message-ui:${input.inputId || randomUUID()}`;
   await defaultStore.acceptHumanEvent(identity, { eventId, text: input.text,
     ...(input.hasImages ? { refs: [{ uri: `herder-image://${encodeURIComponent(input.harness)}/${encodeURIComponent(input.sessionId)}/${encodeURIComponent(eventId)}`, label: "Изображение из пользовательского сообщения; нужен доступ к исходному материалу" }] } : {}),

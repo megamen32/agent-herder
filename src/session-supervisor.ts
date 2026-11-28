@@ -34,6 +34,7 @@ import { LineageStore, type LineageRecord } from "./lineage-store.js";
 import { ModelsDevPricing } from "./model-pricing.js";
 import { coordinationNotes, type WorkspaceDeclaration, type WorkspaceObservation } from "./coordination-notes.js";
 import { herderEvents, type HerderEventBus } from "./herder-events.js";
+import { recordCodexTurn } from "./session-completion.js";
 import { createNativeTurnReceiptPublisher } from "./native-turn-receipts.js";
 import { adapterResourceUri, sessionMessagesResourceUri, sessionResourceUri } from "./herder-resource-uris.js";
 import { harnessEventHealth, type HarnessEventHealthRegistry } from "./harness-event-health.js";
@@ -1294,6 +1295,7 @@ export class SessionSupervisor {
 
   private handleHarnessEvent(provider: string, event: HarnessEvent): void {
     const at = event.at ?? new Date().toISOString();
+    if (event.completionState) recordCodexTurn(this.events, event.completionState);
     if (event.kind === "process.disconnected") {
       this.eventHealth.disconnected(provider, typeof event.data?.error === "string" ? event.data.error : undefined);
     } else {

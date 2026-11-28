@@ -1,3 +1,4 @@
+import type { CodexTurnState } from "../session-completion.js";
 import { readCodexActiveRuntime, type CodexActiveReceipt } from "./codex-active-runtime.js";
 import { terminalQuotaFailure, type TerminalQuotaFailure } from "./quota-failure.js";
 import { execFile, type ChildProcessWithoutNullStreams } from "node:child_process";
@@ -1055,6 +1056,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
           const thread = { ...result.thread, name: result.thread.name ?? cached?.name, cwd: result.thread.cwd ?? cached?.cwd };
           this.threads.set(id, thread);
           base = this.toSession(thread);
+          const latest = this.lastNativeTurns.get(id);
+          if (nativeLatestTurn && latest?.status === "failed") base.status = "error";
+          else if (nativeLatestTurn && latest && ["completed", "interrupted"].includes(latest.status) && base.status === "running") base.status = "idle";
         } else {
           this.threads.delete(id);
         }
@@ -1822,6 +1826,41 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     } catch (error) {
       return { ok: false, error: (error as Error).message };
     }
+  }
+
+  private readonly lastAssistantItems = new Map<string, {turnId: string; itemId?: string; text: string; questions?: boolean}>();
+
+  private completionState(id: string, turn: Record<string, unknown>): CodexTurnState | null {
+    if (typeof turn.id !== "string" || !turn.id) return null;
+    const item = Array.isArray(turn.items)
+      ? [...turn.items].reverse().find(item => item?.type === "agentMessage") : undefined;
+    const saved = this.lastAssistantItems.get(id);
+    const cached = saved?.turnId === turn.id ? saved : undefined;
+    const hasQuestions = item ? Boolean(item.questions?.length) : cached?.questions;
+    let outcome: CodexTurnState["outcome"];
+    switch (turn.status) {
+      case "inProgress": outcome = null; break;
+      case "failed": outcome = "failed"; break;
+      case "interrupted": outcome = "stopped"; break;
+      case "completed": outcome = hasQuestions ? "needs_input" : "completed"; break;
+      default: return null;
+    }
+    const text = typeof item?.text === "string" ? item.text : cached?.text;
+    const parentThreadId = this.threads.get(id)?.parentThreadId;
+    return {
+      sessionId: id, turnId: turn.id, ...(parentThreadId ? {parentThreadId} : {}),
+      state: outcome ? "finished" : "running", outcome,
+      finishedAt: outcome ? threadTimestamp(turn.completedAt as string | number) ?? new Date().toISOString() : null,
+      lastAssistantMessage: outcome && text ? redactSensitive(text.trim()).slice(0, 240) : null,
+    };
+  }
+
+  async readCompletionState(id: string): Promise<CodexTurnState | null> {
+    if (!await this.canReadProjectHistory(id)) return null;
+    await this.ensureReady();
+    const result = await this.request("thread/turns/list", {threadId: id, limit: 1, sortDirection: "desc", itemsView: "summary"},
+      "completion_status", 2000) as {data?: Record<string, unknown>[]};
+    return result.data?.[0] ? this.completionState(id, result.data[0]) : null;
   }
 
   /** One native summary page proves the current latest turn without scanning its rollout. */
@@ -3395,13 +3434,19 @@ export class CodexAppServerAdapter implements HarnessAdapter {
           this.settleCompletion(threadId);
         }
       }
-      this.emitEvent({ kind: "turn.started", harness: "codex", sessionId: threadId, nativeType: message.method, status: "running", data: { turnId: turn?.id } });
+      this.emitEvent({ kind: "turn.started", harness: "codex", sessionId: threadId, nativeType: message.method, status: "running", data: { turnId: turn?.id },
+        completionState: turn?.id ? this.completionState(threadId, {id: turn.id, status:"inProgress"}) ?? undefined : undefined });
     }
     if (message.method === "item/agentMessage/delta" && threadId && typeof params.delta === "string") {
       const thread = this.threads.get(threadId);
       if (thread) thread.preview = params.delta;
       const turnId = typeof params.turnId === "string" ? params.turnId : undefined;
       const itemId = typeof params.itemId === "string" ? params.itemId : undefined;
+      if (turnId && itemId) {
+        const previous = this.lastAssistantItems.get(threadId);
+        const prefix = previous?.turnId === turnId && previous.itemId === itemId ? previous.text : "";
+        this.lastAssistantItems.set(threadId, {turnId, itemId, text: (prefix + params.delta).slice(0, 512)});
+      }
       if (this.projectRuntimePolicy && this.projectThreadIds.has(threadId) && turnId) {
         this.recordProjectAssistantDelta(threadId, turnId, itemId, params.delta);
       }
@@ -3410,6 +3455,10 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     if (message.method === "item/completed" && threadId && typeof params.turnId === "string"
       && params.item && typeof params.item === "object") {
       const item = params.item as Record<string, unknown>;
+      if (item.type === "agentMessage" && typeof item.text === "string") {
+        this.lastAssistantItems.set(threadId, {turnId: params.turnId, text: redactSensitive(item.text.trim()).slice(0, 240),
+          questions: Array.isArray(item.questions) && item.questions.length > 0});
+      }
       const questions = item.type === "agentMessage" && item.phase === "final_answer"
         ? codexAsyncUserInputQuestions(item.questions) : null;
       if (questions && typeof item.id === "string" && item.id) {
@@ -3435,6 +3484,11 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       this.activeTurns.delete(threadId);
       const completedTurn = params.turn as { id?: string; status?: string; completedAt?: string | number } | undefined;
       if (completedTurn?.id && completedTurn.status) {
+        const completionState = this.completionState(threadId, completedTurn);
+        if (completionState?.state === "finished") {
+          this.emitEvent({kind: "session.updated", harness: "codex", sessionId: threadId, completionState});
+          if (this.lastAssistantItems.get(threadId)?.turnId === completedTurn.id) this.lastAssistantItems.delete(threadId);
+        }
         this.unavailableNativeTurnStates.delete(threadId);
         const quotaFailure = codexTerminalQuotaEvidence(completedTurn, this.threads.get(threadId)?.model);
         const capacityFailure = codexTerminalCapacityEvidence(completedTurn, this.threads.get(threadId)?.model);
