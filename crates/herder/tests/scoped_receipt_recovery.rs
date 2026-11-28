@@ -855,3 +855,27 @@ async fn attachments_bind_the_canonical_key_and_replay_after_capability_is_withd
     assert_eq!(conflict.structured_content.unwrap()["code"], "idempotency_conflict");
     assert_eq!(native.submissions.load(Ordering::SeqCst), 1);
 }
+
+#[test]
+fn legacy_pending_root_reports_working_only_for_the_exact_dispatch() {
+    let fixture = Fixture::new("dispatching", false);
+    let instance = address().instance;
+    let target = serde_json::to_string(&instance).unwrap();
+    let record = json!({
+        "kind":"fresh_create_prompt_v1", "instance":instance, "session_ref":null,
+        "delivery_task":null, "root_intent_id":"intent", "payload_hash":"exact-payload",
+        "result":{"isError":true,"structuredContent":{"create":{"effect":"unknown"}}}
+    });
+    let db = mutation_connection(&fixture.db);
+    db.execute("UPDATE intents SET target=?1 WHERE intent_id='intent'", [&target]).unwrap();
+    db.execute("INSERT INTO tasks(task_id,principal,status,created_at,updated_at,result_json) VALUES ('aggregate','alice','completed','created','updated',?1)",
+        [record.to_string()]).unwrap();
+    let read = || {
+        let task = fixture.authority().get_create_task(&identity("alice"), &combined_grants(), "aggregate")
+            .unwrap().unwrap();
+        serde_json::to_value(task).unwrap()["status"].clone()
+    };
+    assert_eq!(read(), "working");
+    db.execute("UPDATE intents SET payload_hash='other' WHERE intent_id='intent'", []).unwrap();
+    assert_eq!(read(), "completed");
+}

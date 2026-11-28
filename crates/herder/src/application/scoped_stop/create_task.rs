@@ -157,7 +157,8 @@ impl ScopedAuthority {
             .map_err(|_| GateError::Invalid)?;
         let payload_hash = create_payload_binding(instance, specification);
         let (status, session, child, body) = match outcome {
-            CreatePromptOutcome::CreateUnknown | CreatePromptOutcome::CreatePending => (
+            CreatePromptOutcome::CreatePending => ("working", None, None, None),
+            CreatePromptOutcome::CreateUnknown => (
                 "completed",
                 None,
                 None,
@@ -274,6 +275,18 @@ impl ScopedAuthority {
             |row| row.get(0),
         ).optional().map_err(|_| GateError::Store)?;
         if let Some(id) = existing {
+            // Advance the original handle when the root worker supplies its result.
+            // A legacy pending aggregate stored a terminal diagnostic with no session.
+            writer.connection().execute(
+                "UPDATE tasks SET status=?3,updated_at=?4,result_json=?5
+                 WHERE task_id=?1 AND principal=?2 AND result_json<>?5
+                   AND json_extract(result_json,'$.session_ref') IS NULL
+                   AND ((status='working' AND json_extract(result_json,'$.result') IS NULL)
+                     OR (status='completed' AND json_extract(result_json,'$.result.structuredContent.create.effect')='unknown'
+                       AND (?3<>'working' OR json_extract(?5,'$.session_ref') IS NOT NULL OR EXISTS(
+                         SELECT 1 FROM intents WHERE intent_id=?6 AND principal=?2 AND state IN ('prepared','dispatching')))))",
+                params![id,principal.id.0,status,now,raw,root_intent_id],
+            ).map_err(|_| GateError::Store)?;
             return Ok(id);
         }
         let id = random_task_id()?;
@@ -321,6 +334,23 @@ impl ScopedAuthority {
                 Action::Write,
             )
             .map_err(|_| GateError::Invalid)?;
+        if status == "completed" && record.session_ref.is_none()
+            && record.result.as_ref().and_then(|v| v.pointer("/structuredContent/create/effect"))
+                .and_then(Value::as_str) == Some("unknown")
+        {
+            let pending: bool = writer.connection().query_row(
+                "SELECT EXISTS(SELECT 1 FROM intents WHERE intent_id=?1 AND principal=?2
+                 AND target=?3 AND payload_hash=?4 AND state IN ('prepared','dispatching')
+                 AND native_receipt IS NULL)",
+                params![record.root_intent_id, principal.id.0, target, record.payload_hash],
+                |row| row.get(0),
+            ).map_err(|_| GateError::Store)?;
+            if pending {
+                return Ok(Some(GetTaskResult::new(DetailedTask::new(
+                    Task::new(id, TaskStatus::Working, created, updated), TaskPayload::Working,
+                ))));
+            }
+        }
         let child = if status == "working" || status == "completed" && prompt_unknown(&record) {
             linked_delivery(writer.connection(), &principal.id, &record, &self.generation)?
         } else {
