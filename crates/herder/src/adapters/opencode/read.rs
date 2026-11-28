@@ -22,6 +22,18 @@ pub struct OpenCodeSessionTime {
     pub archived: Option<f64>,
 }
 
+impl OpenCodeSessionTime {
+    /// OpenCode keeps both transition timestamps after a turn completes.
+    pub fn is_busy(&self) -> Option<bool> {
+        match (self.busy, self.idle) {
+            (Some(busy), Some(idle)) => Some(busy > idle),
+            (Some(_), None) => Some(true),
+            (None, Some(_)) => Some(false),
+            (None, None) => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct OpenCodeSession {
     pub address: SessionAddress,
@@ -536,4 +548,17 @@ fn valid_native_session_id(value: &str) -> bool {
 
 fn map_connection_error(error: OpenCodeConnectionError) -> ReadError {
     ReadError(format!("OpenCode native read: {error}"))
+}
+
+#[test]
+fn latest_opencode_transition_determines_activity() {
+    let busy = Some(1795883278363.0);
+    let idle = Some(1795883281932.0);
+    for (busy, idle, expected) in [
+        (busy, idle, Some(false)), (idle, busy, Some(true)), (idle, idle, Some(false)),
+        (busy, None, Some(true)), (None, idle, Some(false)), (None, None, None),
+    ] {
+        let time = OpenCodeSessionTime { created: 0.0, updated: 0.0, busy, idle, archived: None };
+        assert_eq!(time.is_busy(), expected);
+    }
 }

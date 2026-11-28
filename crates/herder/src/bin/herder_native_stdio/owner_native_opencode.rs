@@ -298,14 +298,10 @@ impl NativeSessionReader for NativeReader {
             .get_session(target, "herder-owner-snapshot")
             .await
             .map_err(|error| ReadError(error.0))?;
-        let activity = if session.time.busy.is_some() {
-            SessionActivity::Busy {
-                turn_id: "opencode-active".into(),
-            }
-        } else if session.time.idle.is_some() {
-            SessionActivity::Idle
-        } else {
-            SessionActivity::Unknown
+        let activity = match session.time.is_busy() {
+            Some(true) => SessionActivity::Busy { turn_id: "opencode-active".into() },
+            Some(false) => SessionActivity::Idle,
+            None => SessionActivity::Unknown,
         };
         Ok(SessionSnapshot {
             address: target.clone(),
