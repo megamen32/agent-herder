@@ -1997,7 +1997,7 @@ for line in sys.stdin:
    child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(600)'])
    open(os.path.join(home,'child-pid'),'w').write(str(child.pid))
    while True:time.sleep(1)
-  if mode=='ready':time.sleep(13.5)
+  if mode=='ready':time.sleep(5.5)
   v={'harness':'opencode' if mode=='mismatch' else 'codex','capabilities':{'methods':['init','listSessions','getSession','getSessionMessages','sendMessage','createSession'],'deliveryModes':['queue']}}
  elif m=='init':v=None
  elif m=='getSession':v={'id':r['params']['id'],'harness':'codex','status':'idle','cwd':home}
@@ -2044,7 +2044,8 @@ try:
   call('initialize',{'protocolVersion':'2025-06-18','capabilities':{},'clientInfo':{'name':'startup-fixture','version':'1'}},timeout=17)
   p.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n');p.stdin.flush()
  else:call('server/discover',{},timeout=17)
- assert time.monotonic()-started<17,'startup budgets accumulated across owners'
+ elapsed=time.monotonic()-started
+ assert elapsed<9,f'cold MCP startup exceeded the controller budget: {elapsed:.3f}s'
  for profile in sys.argv[3:5]:
   pid=int(open(os.path.join(os.path.dirname(profile),'child-pid')).read())
   deadline=time.monotonic()+1
