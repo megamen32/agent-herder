@@ -215,6 +215,7 @@ struct OwnerApp {
     messages: Arc<Mutex<CodexReader>>,
     create: Arc<dyn ApplicationPort>,
     deliver: Arc<dyn ApplicationPort>,
+    resources: Option<Arc<dyn ApplicationPort>>,
     interrupt: Arc<Control>,
     waits: Arc<WaitAutomationApplication>,
     autopilot: Option<Arc<SessionAutopilot>>,
@@ -275,6 +276,14 @@ impl ApplicationPort for OwnerApp {
                     return Some(rmcp::model::CallToolResult::structured(result.structured_content.take().unwrap()));
                 }
                 return Some(result);
+            }
+            if matches!(&request, catalog::Request::Resource(_)) {
+                return match &self.resources {
+                    Some(resources) => resources.call(identity, request).await,
+                    None => Some(rmcp::model::CallToolResult::structured_error(
+                        serde_json::json!({"code":"resource_runtime_not_configured","effect":"none"}),
+                    )),
+                };
             }
             let session = match &request {
                 catalog::Request::Session(catalog::Session::Messages { session_ref, .. })
@@ -571,6 +580,14 @@ fn build_owner(
                 RecoveryDiscovery::new(control.clone(), grants.clone()),
             )) as Arc<dyn automation_driver::AutomationTick>
         });
+    let resources = match &config {
+        Some(config) => Some(Arc::new(
+            herder::application::process_resources::ProcessResourceApplication::new(
+                config.clone(),
+            )?,
+        ) as Arc<dyn ApplicationPort>),
+        None => None,
+    };
     let app = Arc::new(OwnerApp {
         metadata_inventory_home,
         authority: authority.clone(),
@@ -580,6 +597,7 @@ fn build_owner(
         messages,
         create,
         deliver,
+        resources,
         interrupt: control.clone(),
         waits: waits.clone(),
         autopilot: autopilot.clone(),

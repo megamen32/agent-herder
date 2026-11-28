@@ -2611,3 +2611,174 @@ fn owner_enroll_all_flushes_receipt_before_later_native_verification_completes()
     assert_eq!(all_approved_receipts(&remaining).len(), 2);
     reader.join().unwrap();
 }
+
+#[test]
+fn native_codex_primary_dispatches_resources_and_preserves_advisory_fail_open() {
+    use herder::{
+        domain::{
+            address::{Authorization, NodeRef},
+            resource::{ResourceDescriptor, ResourceKind, ResourceRef, ResourceScope},
+        },
+        ownership::{
+            manifest::{AuthorityRoute, StorageAuthority, StorageId, StorageMarker},
+            resource as registry,
+        },
+    };
+    let native = Fixture::new();
+    let secondary = Fixture::new();
+    native.migrate_v4();
+    secondary.migrate_v4();
+    let fake = native.root.join("resource-fake-codex");
+    fs::write(&fake, r#"#!/usr/bin/python3
+import json,os,sys
+home=os.environ['CODEX_HOME']
+for line in sys.stdin:
+ r=json.loads(line)
+ if 'id' not in r:continue
+ with open(os.path.join(home,'resource-native-trace'),'a') as trace:trace.write(r['method']+'\n')
+ assert r['method']=='initialize',r['method']
+ print(json.dumps({'id':r['id'],'result':{'codexHome':os.path.realpath(home)}}),flush=True)
+"#).unwrap();
+    fs::set_permissions(&fake, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::write(&native.profile, serde_json::json!({
+        "database":native.db,"gate":native.gate,"generation":"generation","owner":{
+            "kind":"codex","principal":"resource-owner","node":"local","instance":"native-primary",
+            "executable":fake,"ahap_script":fake,
+            "ahap_env":{"AHAP_CODEX_BIN":fake,"CODEX_HOME":native.root,"AHAP_CODEX_CWD":native.root,
+                        "AGENT_HERDER_WORKLOAD_ISOLATION":"off"},
+            "code_home":native.root,"cwd":native.root}
+    }).to_string()).unwrap();
+    let adapter = secondary.root.join("resource-fake-ahap.py");
+    fs::write(&adapter, r#"import json,sys
+for line in sys.stdin:
+ r=json.loads(line);m=r['method']
+ if m=='initialize':v={'harness':'chatgpt','capabilities':{'methods':['init','listSessions','getSession','getSessionMessages','sendMessage'],'deliveryModes':['queue']}}
+ elif m=='init':v=None
+ else:raise Exception('unexpected AHAP effect: '+m)
+ print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
+"#).unwrap();
+    fs::set_permissions(&adapter, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::write(&secondary.profile, serde_json::json!({
+        "database":secondary.db,"gate":secondary.gate,"generation":"generation","owner":{
+            "kind":"chatgpt","principal":"resource-owner","node":"local","instance":"ahap-secondary",
+            "executable":fs::canonicalize("/usr/bin/python3").unwrap(),"ahap_script":adapter,
+            "code_home":secondary.root,"cwd":secondary.root}
+    }).to_string()).unwrap();
+    let resources = native.root.join("resources-store");
+    fs::create_dir(&resources).unwrap();
+    let authority = StorageAuthority {
+        storage_id: StorageId("native-resource-fixture".into()),
+        authority_node: NodeRef("local".into()),
+        root: resources.clone(),
+        schema: "v1".into(),
+        route: AuthorityRoute::Local,
+    };
+    fs::write(resources.join("storage.json"), serde_json::to_vec(&StorageMarker {
+        schema: authority.schema.clone(), storage_id: authority.storage_id.clone(),
+    }).unwrap()).unwrap();
+    let resource = ResourceRef("native-resource-slot".into());
+    registry::register_or_update(&authority, ResourceDescriptor::new(
+        resource.clone(), ResourceScope::Global, ResourceKind::Workspace,
+        "fixture:native-resource".into(), authority.storage_id.0.clone(), None, 0,
+    ), Authorization::Authorized, None).unwrap();
+    let (resource_dir, _) = authority.read_local_resource_marker(&resource, Authorization::Authorized).unwrap();
+    let config = native.root.join("process-runtime.json");
+    fs::write(&config, serde_json::json!({
+        "version":1,"node_ref":"local","worker":env!("CARGO_BIN_EXE_herder_process_worker"),
+        "execution_root":native.root.join("executions"),"resources":authority,
+        "administrators":["resource-owner"]
+    }).to_string()).unwrap();
+    fs::set_permissions(&config, fs::Permissions::from_mode(0o600)).unwrap();
+    let driver = native.root.join("probe-native-resources.py");
+    fs::write(&driver, r#"import fcntl,json,os,select,signal,subprocess,sys,time
+from pathlib import Path
+binary,primary,secondary,config,resource_dir=sys.argv[1:]
+config=Path(config);resource_dir=Path(resource_dir)
+compat=os.environ.get('HERDER_V1_COMPAT_BINARY')
+meta={'io.modelcontextprotocol/protocolVersion':'2026-07-28','io.modelcontextprotocol/clientCapabilities':{},'io.modelcontextprotocol/clientInfo':{'name':'native-resource-fixture','version':'1'},'principal':'other-admin'}
+def exercise(mode):
+ env=os.environ.copy();env['HERDER_NATIVE_COMMAND']=binary
+ if mode=='missing':env.pop('HERDER_PROCESS_CONFIG',None)
+ else:env['HERDER_PROCESS_CONFIG']=str(config)
+ p=subprocess.Popen([compat or binary,'--trusted-owner-profile',primary,'--trusted-owner-profile',secondary],env=env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=sys.stderr,start_new_session=True)
+ pending=b'';seq=0
+ def call(method,params,seconds=3):
+  nonlocal pending,seq
+  seq+=1
+  if not compat:params['_meta']=meta
+  p.stdin.write((json.dumps({'jsonrpc':'2.0','id':seq,'method':method,'params':params})+'\n').encode());p.stdin.flush()
+  deadline=time.monotonic()+seconds
+  while b'\n' not in pending:
+   assert select.select([p.stdout],[],[],max(0,deadline-time.monotonic()))[0],'resource request blocked'
+   data=os.read(p.stdout.fileno(),65536);assert data,'native owner exited before resource reply'
+   pending+=data
+  line,pending=pending.split(b'\n',1);reply=json.loads(line)
+  assert reply['id']==seq,reply
+  return reply
+ def resource(args,seconds=3):
+  return call('tools/call',{'name':'resource','arguments':args},seconds)['result']
+ def value(reply):
+  assert not reply.get('isError'),reply
+  return reply['structuredContent']
+ try:
+  if compat:
+   assert 'result' in call('initialize',{'protocolVersion':'2025-06-18','capabilities':{},'clientInfo':{'name':'native-resource-fixture','version':'1'}})
+   p.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n');p.stdin.flush()
+  listing=resource({'action':'list'})
+  if mode=='missing':
+   assert listing.get('isError') and listing['structuredContent']['code']=='resource_runtime_not_configured',listing
+   return
+  if mode=='denied':
+   assert listing.get('isError'),listing
+   return
+  rows=value(listing)['resources'];assert len(rows)==1 and rows[0]['resource']['resource_ref']=='native-resource-slot',rows
+  discovered=value(call('tools/call',{'name':'discover','arguments':{'action':'instances'}})['result'])
+  assert {r['instance_ref'] for r in discovered['instances']}=={'native-primary','ahap-secondary'},discovered
+  acquired=value(resource({'action':'claim','resource_ref':'native-resource-slot','purpose':'isolated wire fixture','request_key':'native-resource-claim','expires_at':'2099-01-01T00:00:00Z'}))
+  assert acquired['status']=='acquired',acquired
+  owner=(resource_dir/'owner.json').read_bytes()
+  healthy=value(resource({'action':'get','resource_ref':'native-resource-slot'}))
+  assert healthy['claim']['principal_ref']=='resource-owner',healthy
+  declarations=resource_dir/'declarations.json';declarations.write_bytes(b'corrupt advisory fixture')
+  degraded=value(resource({'action':'list'}))['resources'][0]
+  assert degraded['claim']==healthy['claim'] and degraded['declarations_unavailable'] is True,degraded
+  assert degraded['declarations']==[] and (resource_dir/'owner.json').read_bytes()==owner
+  assert declarations.read_bytes()==b'corrupt advisory fixture'
+  declarations.unlink()
+  request={'action':'declare','resource_ref':'native-resource-slot','declaration':{'operation':'set','worktree':str(config.parent),'scope':'fixture','purpose':'advisory wire fixture','expires_at':'2099-01-01T00:00:00Z'}}
+  with open(resource_dir/'declarations.lock','a+b') as lock:
+   fcntl.flock(lock,fcntl.LOCK_EX)
+   try:
+    started=time.monotonic();busy=value(resource(request,1))
+    assert time.monotonic()-started<1 and busy['status']=='unavailable' and busy['advisory'] is True,busy
+    assert not declarations.exists() and (resource_dir/'owner.json').read_bytes()==owner
+   finally:fcntl.flock(lock,fcntl.LOCK_UN)
+  assert value(resource(request))['status']=='declared'
+  assert (resource_dir/'owner.json').read_bytes()==owner
+ finally:
+  p.stdin.close()
+  try:p.wait(timeout=2)
+  except subprocess.TimeoutExpired:
+   os.killpg(p.pid,signal.SIGKILL);p.wait(timeout=2)
+exercise('ready')
+preserved_owner=(resource_dir/'owner.json').read_bytes()
+original=config.read_bytes();changed=json.loads(original);changed['administrators']=['other-admin']
+try:
+ config.write_text(json.dumps(changed))
+ exercise('denied')
+ assert (resource_dir/'owner.json').read_bytes()==preserved_owner
+finally:config.write_bytes(original)
+exercise('missing')
+assert (resource_dir/'owner.json').read_bytes()==preserved_owner
+"#).unwrap();
+    let binary = std::env::var_os("HERDER_V1_CANDIDATE_BINARY")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_herder_native_stdio")));
+    let result = Command::new("/usr/bin/python3").arg(&driver).arg(binary)
+        .arg(&native.profile).arg(&secondary.profile).arg(&config).arg(&resource_dir)
+        .output().unwrap();
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    let trace = fs::read_to_string(native.root.join("resource-native-trace")).unwrap();
+    assert!(trace.lines().count() >= 3);
+    assert!(trace.lines().all(|line| line == "initialize"), "{trace}");
+}
