@@ -1012,6 +1012,11 @@ def run(args):
         occupied = read_occupancy(selector)
         old_job = getattr(args, "supersede_job", None)
         check_supersede_pointer(occupied, old_job)
+    backup = Path(args.backup)
+    if not backup.is_absolute() or backup.parent.resolve(strict=True) != backup.parent:
+        raise ValueError("backup parent must exist and be canonical")
+    if os.path.lexists(backup):
+        raise FileExistsError(f"backup path already exists: {backup}")
     if old_job is not None and not (getattr(args, "supersede_restart_provider", None)
                                     and getattr(args, "supersede_consumer_provider", None)):
         raise ValueError("supersede requires both original typed provider receipts")

@@ -218,6 +218,15 @@ class CoordinatorContracts(unittest.TestCase):
         self.assertEqual(self.fixture.database.read_bytes(), self.fixture.before_db)
         self.assertEqual(self.fixture.selector.read_bytes(), self.fixture.new_selector.read_bytes())
 
+    def test_existing_backup_refused_before_guard(self):
+        Path(self.args.backup).mkdir()
+        with self.assertRaises(FileExistsError):
+            rollout.run(self.args)
+        self.assertNotIn("guard-enter", self.events)
+        self.assertFalse(self.args.job_dir.exists())
+        self.assertEqual(self.fixture.selector.read_bytes(), self.fixture.before_selector)
+        self.assertEqual(self.fixture.launcher.read_bytes(), self.fixture.before_launcher)
+
     def test_missing_scheduler_proof_refuses_before_any_selector_mutation(self):
         self.args.scheduler_proof = self.root / "missing-scheduler.json"
         with self.assertRaises(FileNotFoundError):
