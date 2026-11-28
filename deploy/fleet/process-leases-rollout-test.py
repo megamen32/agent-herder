@@ -730,6 +730,16 @@ class ComponentAncestry(unittest.TestCase):
         with self.assertRaisesRegex(rollout.main_guard.MainGuardError, "discard_live_commits"):
             rollout.component_guard(self.repo / ".git", self.before, self.after)
 
+    def test_reviewed_remote_registration_only_appends_one_wrapper(self):
+        reviewed = {"registration": {"remote_codex_binding": {}}}
+        git_dir = self.repo / ".git"
+        self.before["remote_ahap_wrappers"] = [{"instance": "retained"}]
+        self.after["remote_ahap_wrappers"] = [{"instance": "retained"}, {"instance": "new"}]
+        rollout.component_guard(git_dir, self.before, self.after, reviewed)
+        self.after["remote_ahap_wrappers"][0] = {"instance": "replacement"}
+        with self.assertRaisesRegex(ValueError, "unreviewed remote wrapper replacement"):
+            rollout.component_guard(git_dir, self.before, self.after, reviewed)
+
     def test_retained_component_and_authority_changes_need_separate_review(self):
         self.after["adapters"]["codex"] += "-different"
         with self.assertRaisesRegex(ValueError, "unreviewed.*replacement"):

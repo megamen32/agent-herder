@@ -236,10 +236,21 @@ def verify_native_drain_state(state):
         raise ValueError("durable native drain does not match the admitted baseline")
 
 
-def component_guard(git_dir, before, after):
+def component_guard(git_dir, before, after, reviewed_profile=None):
     """Preserve composite components and apply main ancestry to each replacement."""
     if os.environ.get(main_guard.EMERGENCY_ENV):
         raise RuntimeError("this coordinator does not admit an emergency main override")
+    if reviewed_profile and set(reviewed_profile.get("registration", {})) == {"remote_codex_binding"}:
+        # profile_migration verified the appended wrapper. Keep checking every retained entry.
+        proposed = after.get("remote_ahap_wrappers", [])
+        retained = before.get("remote_ahap_wrappers", [])
+        if len(proposed) != len(retained) + 1 or proposed[:-1] != retained:
+            raise ValueError("unreviewed remote wrapper replacement")
+        after = after.copy()
+        if "remote_ahap_wrappers" in before:
+            after["remote_ahap_wrappers"] = retained
+        else:
+            after.pop("remote_ahap_wrappers")
     migration = candidate.adapter_transition(before, after)
     if before.get("canonical_migration") is not None and after.get("canonical_migration") != before["canonical_migration"]:
         raise ValueError("existing canonical migration authority requires a separately reviewed transition")
@@ -863,13 +874,13 @@ def admit(args, gate):
     drained = drained_baseline(args)
     before_pair = drained["pair"] if drained is not None else runtime_pair(selector, launcher, args.compat_pid, args.core_pid)
     gate.check()
-    ancestry = component_guard(gate.proof["project"], baseline, proposed)
+    migration = candidate.profile_migration(selection, new_selection, baseline, proposed)
+    ancestry = component_guard(gate.proof["project"], baseline, proposed, migration)
     gate.check()
     drained_again = drained_baseline(args) if drained is not None else None
     before_pair_again = drained_again["pair"] if drained_again is not None else runtime_pair(selector, launcher, args.compat_pid, args.core_pid)
     if drained_again != drained or before_pair_again != before_pair:
         raise ValueError("running baseline changed during admission")
-    migration = candidate.profile_migration(selection, new_selection, baseline, proposed)
     # This proof is fresh but needs no native call: a newly installed canonical
     # TS service may safely fail closed while the old core lacks wait_status.
     proof_bytes, _ = scheduler.read_file(str(args.scheduler_proof))
