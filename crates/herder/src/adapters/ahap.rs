@@ -9,7 +9,7 @@ use std::{
     path::PathBuf,
     process::{Child, ChildStdin, Command, Stdio},
     sync::{
-        Mutex,
+        Condvar, Mutex,
         mpsc::{self, Receiver, RecvTimeoutError},
     },
     thread,
@@ -58,8 +58,30 @@ pub struct AhapClient {
     harness: String,
     methods: HashSet<String>,
     capabilities: Value,
-    state: Mutex<State>,
+    // The mutex protects a short checkout, never the subprocess RPC itself.
+    // Waiters sleep on the condition variable within their own call deadline.
+    state: Mutex<Option<State>>,
+    available: Condvar,
     timeout: Duration,
+}
+struct StateLease<'a> {
+    client: &'a AhapClient,
+    state: Option<State>,
+}
+impl Drop for StateLease<'_> {
+    fn drop(&mut self) {
+        // Preserve the old mutex poisoning guarantee on an unexpected unwind:
+        // the runner may already have observed an RPC whose outcome is unknown.
+        if thread::panicking() {
+            if let Some(state) = self.state.as_mut() {
+                state.poison();
+            }
+        }
+        if let Ok(mut slot) = self.client.state.lock() {
+            *slot = self.state.take();
+            self.client.available.notify_one();
+        }
+    }
 }
 impl State {
     /// Do not release the caller's execution guard while our runner can still
@@ -167,6 +189,10 @@ fn rpc(
     timeout: Duration,
     harness: &str,
 ) -> Result<Value, AhapError> {
+    if timeout.is_zero() {
+        return Err(AhapError::BeforeSend);
+    }
+    let deadline = Instant::now() + timeout;
     if !s.usable {
         return Err(AhapError::Unavailable);
     }
@@ -186,9 +212,11 @@ fn rpc(
     if data.len() as u64 > MAX_FRAME {
         return Err(AhapError::BeforeSend);
     }
-    let deadline = Instant::now() + timeout;
+    if Instant::now() >= deadline {
+        return Err(AhapError::BeforeSend);
+    }
     let (ack, ack_rx) = mpsc::sync_channel(1);
-    if s.writer.send((data, ack)).is_err() {
+    if s.writer.try_send((data, ack)).is_err() {
         s.usable = false;
         return Err(AhapError::BeforeSend);
     }
@@ -283,6 +311,7 @@ impl AhapClient {
         {
             return Err(AhapError::InvalidConfig);
         }
+        let deadline = Instant::now() + config.timeout;
         let mut cmd = Command::new(&config.executable);
         cmd.args(&config.args)
             .current_dir(&config.cwd)
@@ -316,7 +345,7 @@ impl AhapClient {
             &mut state,
             "initialize",
             json!({"harness":config.harness,"ahapVersion":"0.1"}),
-            config.timeout,
+            deadline.saturating_duration_since(Instant::now()),
             &config.harness,
         )
         .map_err(|cause| AhapError::Initialization {
@@ -345,7 +374,7 @@ impl AhapClient {
                 &mut state,
                 "init",
                 json!({}),
-                config.timeout,
+                deadline.saturating_duration_since(Instant::now()),
                 &config.harness,
             )
             .map_err(|cause| AhapError::Initialization {
@@ -359,7 +388,8 @@ impl AhapClient {
             harness: config.harness,
             methods,
             capabilities: init["capabilities"].clone(),
-            state: Mutex::new(state),
+            state: Mutex::new(Some(state)),
+            available: Condvar::new(),
             timeout: config.timeout,
         })
     }
@@ -377,16 +407,33 @@ impl AhapClient {
     pub fn supports(&self, method: &str) -> bool {
         self.methods.contains(method)
     }
+    fn checkout(&self, deadline: Instant) -> Result<StateLease<'_>, AhapError> {
+        let slot = self.state.lock().map_err(|_| AhapError::Unavailable)?;
+        let (mut slot, _) = self.available.wait_timeout_while(
+            slot,
+            deadline.saturating_duration_since(Instant::now()),
+            |state| state.is_none(),
+        ).map_err(|_| AhapError::Unavailable)?;
+        if slot.is_none() || Instant::now() >= deadline {
+            // This caller has not written anything. The in-flight caller keeps
+            // ownership of the runner and its outcome is left untouched.
+            return Err(AhapError::BeforeSend);
+        }
+        Ok(StateLease { client: self, state: slot.take() })
+    }
+
     pub fn call(&self, method: &str, params: Value) -> Result<Value, AhapError> {
         if !self.supports(method) {
             return Err(AhapError::Unsupported);
         }
-        let mut s = self.state.lock().map_err(|_| AhapError::Unavailable)?;
+        let deadline = Instant::now() + self.timeout;
+        let mut lease = self.checkout(deadline)?;
+        let s = lease.state.as_mut().expect("checked out AHAP state");
         if !s.usable {
             return Err(AhapError::Unavailable);
         }
         if s.init_pending {
-            let result = rpc(&mut s, "init", json!({}), self.timeout, &self.harness);
+            let result = rpc(s, "init", json!({}), deadline.saturating_duration_since(Instant::now()), &self.harness);
             if let Err(cause) = result {
                 s.poison();
                 return Err(AhapError::Initialization { phase: "init", cause: Box::new(cause) });
@@ -396,7 +443,7 @@ impl AhapClient {
                 return result;
             }
         }
-        rpc(&mut s, method, params, self.timeout, &self.harness)
+        rpc(s, method, params, deadline.saturating_duration_since(Instant::now()), &self.harness)
     }
 }
 
@@ -582,6 +629,79 @@ for line in sys.stdin:
         assert!(text.contains("init") && text.contains("Remote"), "{text}");
         assert!(!text.contains("SECRET"), "{text}");
     }
+
+
+    #[test]
+    fn unwinding_checked_out_state_poisons_the_runner_without_replay() {
+        let (f, client) = fixture(SCRIPT, Duration::from_secs(2));
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _lease = client.checkout(Instant::now() + Duration::from_secs(1)).unwrap();
+            panic!("fixture RPC panic");
+        }));
+        assert!(result.is_err());
+        assert!(matches!(client.call("createSession", json!({})), Err(AhapError::Unavailable)));
+        assert!(!fs::read_to_string(f.0.join("trace")).unwrap().contains("createSession"));
+    }
+
+    #[test]
+    fn waiting_for_busy_adapter_is_bounded_and_does_not_poison_it() {
+        let (f, mut client) = fixture(SCRIPT, Duration::from_secs(2));
+        client.timeout = Duration::from_millis(100);
+        let client = std::sync::Arc::new(client);
+        let lease = client.checkout(Instant::now() + Duration::from_secs(1)).unwrap();
+        let concurrent = client.clone();
+        let (sent, received) = mpsc::channel();
+        let thread = thread::spawn(move || {
+            sent.send(concurrent.call("createSession", json!({}))).unwrap();
+        });
+        assert!(matches!(
+            received.recv_timeout(Duration::from_secs(1)).unwrap(),
+            Err(AhapError::BeforeSend)
+        ));
+        assert!(!fs::read_to_string(f.0.join("trace")).unwrap().contains("createSession"));
+        drop(lease);
+        thread.join().unwrap();
+        assert!(client.call("createSession", json!({})).is_ok());
+    }
+
+    #[test]
+    fn lazy_init_and_operation_share_one_deadline() {
+        let script = SCRIPT
+            .replace("elif m=='init':v=None", "elif m=='init':time.sleep(.2);v=None")
+            .replace("time.sleep(1)", "time.sleep(.2)");
+        let (f, mut client) = fixture_mode(&script, Duration::from_secs(2), true);
+        client.timeout = Duration::from_millis(300);
+        let started = Instant::now();
+        assert!(matches!(client.call("sendMessage", json!({})), Err(AhapError::OutcomeUnknown)));
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert!(matches!(client.call("sendMessage", json!({})), Err(AhapError::Unavailable)));
+        let trace = fs::read_to_string(f.0.join("trace")).unwrap();
+        assert_eq!(trace.lines().filter(|m| *m == "init").count(), 1);
+        assert_eq!(trace.lines().filter(|m| *m == "sendMessage").count(), 1);
+    }
+
+    #[test]
+    fn startup_handshakes_share_one_deadline() {
+        let (f, client) = fixture(SCRIPT, Duration::from_secs(2));
+        drop(client);
+        let script = SCRIPT
+            .replace("if m=='initialize':", "if m=='initialize':\n  time.sleep(.2)")
+            .replace("elif m=='init':v=None", "elif m=='init':time.sleep(.2);v=None");
+        fs::write(f.0.join("adapter"), script).unwrap();
+        let started = Instant::now();
+        let result = AhapClient::open(AhapConfig {
+            instance_id: "node-a/profile-a".into(),
+            harness: "opencode".into(),
+            executable: fs::canonicalize("/usr/bin/python3").unwrap(),
+            args: vec![f.0.join("adapter").to_string_lossy().into_owned()],
+            cwd: f.0.clone(),
+            env: vec![("TRACE".into(), f.0.join("startup-trace").to_string_lossy().into_owned())],
+            timeout: Duration::from_millis(300),
+        });
+        assert!(matches!(result, Err(AhapError::Initialization { .. })));
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
     #[test]
     fn timeout_never_replays_a_possibly_sent_mutation() {
         let (f, c) = fixture(SCRIPT, Duration::from_millis(100));

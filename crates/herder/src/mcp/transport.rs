@@ -1,5 +1,5 @@
 //! Native MCP stdio boundary. The default server has no application attached.
-use std::{borrow::Cow, future::Future, pin::Pin, sync::Arc};
+use std::{borrow::Cow, future::Future, pin::Pin, sync::Arc, time::Duration};
 
 use crate::{
     auth::identity::{
@@ -132,10 +132,16 @@ impl ApplicationPort for ConfigApplication {
     }
 }
 
+struct OwnerIsolation {
+    slots: Arc<tokio::sync::Semaphore>,
+    read_timeout: Duration,
+}
+
 #[derive(Clone)]
 pub struct NativeServer {
     identity: ConnectionIdentity,
     application: Option<Arc<dyn ApplicationPort>>,
+    isolation: Option<Arc<OwnerIsolation>>,
 }
 
 impl Default for NativeServer {
@@ -143,6 +149,7 @@ impl Default for NativeServer {
         Self {
             identity: ConnectionIdentity::new(Caller::Unknown, None),
             application: None,
+            isolation: None,
         }
     }
 }
@@ -161,6 +168,69 @@ impl NativeServer {
         Self {
             identity,
             application: Some(application),
+            isolation: None,
+        }
+    }
+
+    /// Each trusted owner gets its own admission limit. Synchronous adapter I/O
+    /// must never run on the MCP executor, including a current-thread runtime.
+    pub fn with_owner_isolation(mut self) -> Self {
+        self.isolation = Some(Arc::new(OwnerIsolation {
+            slots: Arc::new(tokio::sync::Semaphore::new(4)),
+            read_timeout: Duration::from_secs(20),
+        }));
+        self
+    }
+
+    async fn call_application(
+        &self,
+        application: &Arc<dyn ApplicationPort>,
+        request: catalog::Dispatched,
+    ) -> Option<CallToolResult> {
+        // These owner-policy operations use verified configuration only, so
+        // discovery remains available even when this owner's adapter is busy.
+        let local_discovery = matches!(
+            &request.request,
+            catalog::Request::Discover(
+                catalog::Discover::Nodes {} | catalog::Discover::Instances { .. }
+            )
+        );
+        let Some(isolation) = self.isolation.as_ref().filter(|_| !local_discovery) else {
+            return application.call(&self.identity, request.request).await;
+        };
+        let permit = match isolation.slots.clone().try_acquire_owned() {
+            Ok(permit) => permit,
+            Err(_) => return Some(CallToolResult::structured_error(
+                json!({"code":"owner_busy","effect":"none","message":"This owner has too many active requests"}),
+            )),
+        };
+        let read = request.access == catalog::Access::Read;
+        let application = application.clone();
+        let identity = self.identity.clone();
+        let runtime = tokio::runtime::Handle::current();
+        let task = tokio::task::spawn_blocking(move || {
+            // Keep admission until the actual work ends, even if its caller
+            // times out. Dropping a JoinHandle cannot cancel blocking native I/O.
+            let _permit = permit;
+            runtime.block_on(application.call(&identity, request.request))
+        });
+        let result = if read {
+            match tokio::time::timeout(isolation.read_timeout, task).await {
+                Ok(result) => result,
+                Err(_) => return Some(CallToolResult::structured_error(
+                    json!({"code":"owner_read_timeout","effect":"none","message":"Owner read exceeded its response deadline"}),
+                )),
+            }
+        } else {
+            // Submitted mutations retain their durable receipt and execution
+            // guard until the adapter reports its bounded outcome. Never replay.
+            task.await
+        };
+        match result {
+            Ok(result) => result,
+            Err(_) => Some(CallToolResult::structured_error(
+                json!({"code":"owner_execution_unavailable","effect":if read {"none"} else {"unknown"},"retryable":false}),
+            )),
         }
     }
 }
@@ -274,7 +344,7 @@ impl ServerHandler for NativeServer {
             {
                 return Ok(CallToolResult::structured_error(json!({"code":"unsupported", "effect":"none", "message":"operation is not connected"})).into());
             }
-            if let Some(result) = application.call(&self.identity, parsed.request).await {
+            if let Some(result) = self.call_application(application, parsed).await {
                 return Ok(result.into());
             }
         }
@@ -307,6 +377,52 @@ mod wire_tests {
         atomic::{AtomicUsize, Ordering},
     };
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+
+    struct SlowApplication {
+        calls: AtomicUsize,
+    }
+    impl ApplicationPort for SlowApplication {
+        fn call<'a>(
+            &'a self,
+            _: &'a ConnectionIdentity,
+            _: catalog::Request,
+        ) -> ApplicationFuture<'a> {
+            Box::pin(async move {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(200));
+                Some(CallToolResult::structured(json!({"completed":true})))
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn timed_out_owner_read_keeps_capacity_and_mutations_keep_their_outcome() {
+        let concrete = Arc::new(SlowApplication { calls: AtomicUsize::new(0) });
+        let app: Arc<dyn ApplicationPort> = concrete.clone();
+        let mut server = NativeServer::with_application(Caller::Unknown, app.clone())
+            .with_owner_isolation();
+        server.isolation = Some(Arc::new(OwnerIsolation {
+            slots: Arc::new(tokio::sync::Semaphore::new(1)),
+            read_timeout: Duration::from_millis(20),
+        }));
+        let read = || catalog::dispatch("discover", json!({"action":"projects"})).unwrap();
+        let started = std::time::Instant::now();
+        let result = server.call_application(&app, read()).await.unwrap();
+        assert_eq!(result.structured_content.unwrap()["code"], "owner_read_timeout");
+        assert!(started.elapsed() < Duration::from_millis(150));
+        let result = server.call_application(&app, read()).await.unwrap();
+        assert_eq!(result.structured_content.unwrap()["code"], "owner_busy");
+        assert_eq!(concrete.calls.load(Ordering::SeqCst), 1);
+
+        tokio::time::sleep(Duration::from_millis(220)).await;
+        let mutation = catalog::dispatch("stop", json!({
+            "action":"stop","session_ref":"fixture","request_key":"fixture"
+        })).unwrap();
+        let result = server.call_application(&app, mutation).await.unwrap();
+        assert_eq!(result.structured_content.unwrap()["completed"], true);
+        assert_eq!(concrete.calls.load(Ordering::SeqCst), 2);
+    }
 
     #[tokio::test]
     async fn configured_nodes_require_verified_principal_and_exact_read_grant() {

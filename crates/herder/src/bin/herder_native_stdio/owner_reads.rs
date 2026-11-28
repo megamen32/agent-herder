@@ -148,7 +148,7 @@ fn handle(
     use catalog::{Discover, Export, ExportFormat, Request, Search, Session, Sessions};
     if !matches!(
         request,
-        Request::Sessions(_)
+        Request::Sessions(Sessions::List { .. })
             | Request::Export(_)
             | Request::Search(_)
             | Request::Session(Session::Recent { .. } | Session::Context { .. } | Session::Messages { .. })

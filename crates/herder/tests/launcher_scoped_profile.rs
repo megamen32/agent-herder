@@ -1852,6 +1852,108 @@ finally:
     assert_eq!(fs::read_to_string(f.root.join("trace")).unwrap(), "initialize\n");
 }
 
+
+#[test]
+fn hung_ahap_read_does_not_block_discovery_or_other_instances() {
+    ahap_isolation_probe("hang");
+}
+
+#[test]
+fn unsupported_ahap_inventory_returns_error_without_hanging() {
+    ahap_isolation_probe("inventory");
+}
+
+fn ahap_isolation_probe(mode: &str) {
+    let hung = Fixture::new();
+    let healthy = Fixture::new();
+    for (i, f) in [&hung, &healthy].into_iter().enumerate() {
+        f.migrate_v4();
+        let adapter = f.root.join("isolated-adapter.py");
+        fs::write(&adapter, r#"import json,os,sys,time
+home=os.environ['HOME']
+for line in sys.stdin:
+ r=json.loads(line);m=r['method']
+ if m=='initialize':v={'harness':'chatgpt','capabilities':{'methods':['init','listSessions','getSession','getSessionMessages','sendMessage'],'deliveryModes':['queue']}}
+ elif m=='init':v=None
+ elif m=='getSession':v={'id':r['params']['id'],'harness':'chatgpt','status':'idle','cwd':home}
+ elif m=='listSessions':
+  if os.path.exists(os.path.join(home,'hang')):
+   open(os.path.join(home,'entered'),'w').close()
+   while not os.path.exists(os.path.join(home,'release')):time.sleep(.01)
+  v=[{'id':'fixture-session','harness':'chatgpt','status':'idle','cwd':home}]
+ else:raise Exception(m)
+ print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
+"#).unwrap();
+        fs::set_permissions(&adapter, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::write(&f.profile, serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{
+            "kind":"chatgpt","principal":"owner","node":"node","instance":format!("isolation-{i}"),
+            "executable":fs::canonicalize("/usr/bin/python3").unwrap(),"ahap_script":adapter,
+            "code_home":f.root,"cwd":f.root}}).to_string()).unwrap();
+    }
+    fs::write(hung.root.join("hang"), "").unwrap();
+    let driver = hung.root.join("probe-isolation.py");
+    fs::write(&driver, r#"import json,os,select,signal,subprocess,sys,time
+compat=os.environ.get('HERDER_V1_COMPAT_BINARY')
+env=os.environ.copy();env['HERDER_NATIVE_COMMAND']=sys.argv[1]
+p=subprocess.Popen([compat or sys.argv[1],'--trusted-owner-profile',sys.argv[2],'--trusted-owner-profile',sys.argv[3]],env=env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=sys.stderr,start_new_session=True)
+meta={'io.modelcontextprotocol/protocolVersion':'2026-07-28','io.modelcontextprotocol/clientCapabilities':{},'io.modelcontextprotocol/clientInfo':{'name':'isolation-fixture','version':'1'}}
+pending=b''
+def send(i,method,params):
+ if not compat:params['_meta']=meta
+ p.stdin.write((json.dumps({'jsonrpc':'2.0','id':i,'method':method,'params':params})+'\n').encode());p.stdin.flush()
+def receive(deadline):
+ global pending
+ while b'\n' not in pending:
+  assert select.select([p.stdout],[],[],max(0,deadline-time.monotonic()))[0], 'hung adapter blocked unrelated MCP request'
+  chunk=os.read(p.stdout.fileno(),65536);assert chunk,'core exited before reply'
+  pending+=chunk
+ line,pending=pending.split(b'\n',1)
+ return json.loads(line)
+try:
+ if compat:
+  send(0,'initialize',{'protocolVersion':'2025-06-18','capabilities':{},'clientInfo':{'name':'isolation-fixture','version':'1'}})
+  assert 'result' in receive(time.monotonic()+5)
+  p.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n');p.stdin.flush()
+ if sys.argv[4]=='inventory':
+  send(1,'tools/call',{'name':'sessions','arguments':{'action':'inventory','node_ref':'node','instance_ref':'isolation-0','limit':1}})
+  reply=receive(time.monotonic()+3)
+  assert reply['result']['isError'] and reply['result']['structuredContent']['code']=='unsupported',reply
+  send(2,'tools/call',{'name':'discover','arguments':{'action':'instances'}})
+  reply=receive(time.monotonic()+3);assert len(reply['result']['structuredContent']['instances'])==2,reply
+  sys.exit(0)
+ for i in range(2):
+  send(10+i,'tools/call',{'name':'session','arguments':{'action':'register','instance_ref':'isolation-'+str(i),'native_session_id':'fixture-session','request_key':'fixture-register'}})
+  reply=receive(time.monotonic()+5);assert 'result' in reply and not reply['result'].get('isError'),reply
+ send(1,'tools/call',{'name':'sessions','arguments':{'action':'list','node_ref':'node','instance_ref':'isolation-0'}})
+ entered=os.path.join(os.path.dirname(sys.argv[2]),'entered')
+ deadline=time.monotonic()+5
+ while not os.path.exists(entered):
+  assert time.monotonic()<deadline,'inventory did not reach adapter'
+  time.sleep(.01)
+ send(2,'tools/call',{'name':'discover','arguments':{'action':'instances'}})
+ send(3,'tools/call',{'name':'sessions','arguments':{'action':'list','node_ref':'node','instance_ref':'isolation-1'}})
+ deadline=time.monotonic()+2
+ responses={}
+ while len(responses)<2:
+  reply=receive(deadline);assert reply['id'] in (2,3),reply
+  assert 'result' in reply and not reply['result'].get('isError'),reply
+  responses[reply['id']]=reply['result']['structuredContent']
+ assert len(responses[2]['instances'])==2,responses
+ assert len(responses[3]['sessions'])==1,responses
+ reply=receive(time.monotonic()+22)
+ assert reply['id']==1 and reply['result']['isError'] and reply['result']['structuredContent']['code']=='owner_read_timeout',reply
+ open(os.path.join(os.path.dirname(sys.argv[2]),'release'),'w').close()
+ send(4,'tools/call',{'name':'discover','arguments':{'action':'instances'}})
+ reply=receive(time.monotonic()+2);assert reply['id']==4 and len(reply['result']['structuredContent']['instances'])==2,reply
+finally:
+ os.killpg(p.pid,signal.SIGKILL);p.wait(timeout=5)
+"#).unwrap();
+    let binary = std::env::var_os("HERDER_V1_CANDIDATE_BINARY").unwrap_or_else(|| env!("CARGO_BIN_EXE_herder_native_stdio").into());
+    let result = Command::new("/usr/bin/python3").arg(driver).arg(binary)
+        .arg(&hung.profile).arg(&healthy.profile).arg(mode).output().unwrap();
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+}
+
 #[test]
 fn one_core_routes_two_chatgpt_accounts_and_restores_tasks_after_restart() {
     use std::io::{BufRead, BufReader, Write};

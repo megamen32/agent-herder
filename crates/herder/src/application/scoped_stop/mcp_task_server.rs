@@ -34,7 +34,8 @@ impl ScopedTaskServer {
         application: Arc<dyn ApplicationPort>,
     ) -> Self {
         Self {
-            inner: NativeServer::with_connection_identity(identity.clone(), application),
+            inner: NativeServer::with_connection_identity(identity.clone(), application)
+                .with_owner_isolation(),
             identity,
             grants,
             authority,
