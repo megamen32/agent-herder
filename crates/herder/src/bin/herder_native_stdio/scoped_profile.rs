@@ -32,6 +32,8 @@ pub struct OwnerProfile {
     /// Explicitly allow metadata inventory of this profile by its owning principal.
     #[serde(default)]
     pub codex_metadata_inventory: bool,
+    #[serde(default)]
+    pub fresh_remote_codex_authority: bool,
     pub principal: String,
     pub node: String,
     pub instance: String,
@@ -684,8 +686,8 @@ fn open_profile(path: &Path) -> Result<(ScopedAuthority, Profile), Box<dyn std::
     let mut authority = ScopedAuthority::new(p.database.clone(), p.gate.clone(), p.generation.clone())
         .map_err(|_| invalid())?;
     if let Some(owner) = &p.owner
-        && matches!(owner.kind.as_str(), "chatgpt" | "zai")
-        && owner.ahap_script.is_none()
+        && ((matches!(owner.kind.as_str(), "chatgpt" | "zai") && owner.ahap_script.is_none())
+            || (owner.kind == "codex" && owner.fresh_remote_codex_authority && owner.ahap_script.is_some()))
     {
         match std::env::var("AGENT_HERDER_MIGRATION_NEW_AUTHORITIES") {
             Ok(raw) => {
@@ -710,6 +712,7 @@ mod enrollment_tests {
     fn owner() -> OwnerProfile {
         OwnerProfile {
             codex_metadata_inventory: false,
+            fresh_remote_codex_authority: false,
             principal:"owner".into(),node:"node".into(),instance:"profile".into(),
             executable:"/usr/bin/node".into(),code_home:"/home/owner".into(),cwd:"/home/owner/project".into(),
             kind:"chatgpt".into(),ahap_script:Some("/opt/herder/browser.js".into()),ahap_base_url:None,
