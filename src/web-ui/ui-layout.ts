@@ -37,7 +37,7 @@ export function initialPanelLayout(search:string, framed:boolean, storage?:Stora
 export function defaultPanelLayout(): PanelLayout {
   // The list shows the working sessions by default: the counter above it
   // promises exactly that many, and the rest waits one click away.
-  return { chatListOpen: true, headerOpen: false, inspectorOpen: true, listFilter: "working" };
+  return { chatListOpen: true, headerOpen: false, inspectorOpen: !globalThis.matchMedia?.("(max-width: 900px)").matches, listFilter: "working" };
 }
 
 /** The stored layout, or the default one when the browser stored nothing sane. */

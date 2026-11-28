@@ -577,11 +577,10 @@ describe("две темы оформления", () => {
   it("держит тёмную палитру Codex по умолчанию и светлую как переопределение", () => {
     const darkBlock = themeCss.slice(themeCss.indexOf(":root {"), themeCss.indexOf(':root[data-theme="light"]'));
     const lightBlock = themeCss.slice(themeCss.indexOf(':root[data-theme="light"]'), themeCss.indexOf("body {"));
-    // палитра снята с референса: холст не чёрный, панели светлее, текст светлый
-    expect(darkBlock).toContain("--bg: #282a36");
-    expect(darkBlock).toContain("--surface-1: #2c2c38");
-    expect(darkBlock).toContain("--bubble: #323440");
-    expect(darkBlock).toContain("--text: #f2f2f7");
+    expect(darkBlock).toContain("--bg: #121315");
+    expect(darkBlock).toContain("--surface-1: #18191c");
+    expect(darkBlock).toContain("--bubble: #202428");
+    expect(darkBlock).toContain("--text: #eceef0");
     // светлая палитра сохранена как второй вариант
     expect(lightBlock).toContain("--bg: #ffffff");
     expect(lightBlock).toContain("--text: #1c1c1e");
