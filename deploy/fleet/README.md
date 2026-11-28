@@ -8,15 +8,9 @@ The per-host layouts, commands, budgets and acceptance records below describe th
 
 ## Upgrade native recovery owners
 
-On the release controller run `deploy/fleet/rollout-recovery`. The installed shortcut is `herder-recovery-rollout`. It uses the prepared release in `~/.config/agent-herder/recovery-rollout.json` (mode 0600). Use `--host server-44` to select one inventory entry or `--plan PATH` to select a different operator plan.
+On the release controller run `herder-recovery-rollout` (source entry point `deploy/fleet/rollout-recovery`). The default plan is `~/.config/agent-herder/recovery-rollout.json`. Use `--plan PATH` for a prepared release. The command requires exactly one local owner in the plan. A legacy plan may still list remote hosts. An explicit remote target is rejected before the release journal opens.
 
-The plan pins `source`, `bundle`, `controller_host`, `scheduler_unit`, `repo`, `ledger`, `journal` and the existing `deployment_config`. Its `hosts` entries select one of these installed paths.
-
-- `host-local` updates the Linux fleet service's Rust executable, preserving its profile, database, activation file and rollback binding.
-- `local` invokes a prepared release `command`, then reads its `receipt`, active `selector` and running executable.
-- `ssh` uses the configured SSH `routes` and checks the Mac's `identity` (local hostname, model and architecture). A prepared Darwin `command` and expected `sha256` are required for that host.
-
-Each invocation writes one result per host under `journal/source` and exits nonzero if any host is incomplete. Repeating the command reconciles the existing operation against the live owner. A candidate that fails readiness rolls back to its previous binding. An ambiguous switch keeps its lease evidence for reconciliation.
+The command checks the bundle, selector, receipt and running central executable. Repeating a completed release verifies the existing process. Remote harnesses continue to use their central profiles.
 
 ## Shared mesh boundary
 
