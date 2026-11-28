@@ -747,6 +747,38 @@ class NativeProfileMigrationContracts(MigrationFixture):
         self.assertTrue(profile_b.exists())
         self.assertEqual(self.fresh_db.read_bytes(), self.fresh_db_bytes)
 
+    def test_remote_codex_registration_installs_and_rolls_back(self):
+        self.browser_registration_fixture()
+        runner = self.reviewed / "remote-codex.mjs"
+        companion = runner.with_suffix(".mjs.json")
+        candidate.create(runner, b"// isolated remote adapter\n")
+        candidate.create(companion, candidate.encoded({"nodeRef": "node-b", "kind": "codex"}))
+        wrapper = {"node": "node-b", "instance": "codex-central-test", "kind": "codex",
+                   "script": str(runner), "script_sha256": candidate.digest(runner),
+                   "config_sha256": candidate.digest(companion)}
+        self.registration_pin.write_bytes(candidate.encoded(
+            {"wrapper": wrapper, "authority_seed": self.binding["authority_seed"]}))
+        result = candidate.stage_browser_registration(argparse.Namespace(
+            selector=self.selector, launcher=self.launcher, output=self.registration_output,
+            expected_selector_sha256=self.install_args.expected_selector_sha256,
+            remote_binding=(str(self.registration_pin), candidate.digest(self.registration_pin))),
+            remote_codex=True)
+        staged = candidate.read_json(result["selector"])
+        self.assertEqual(staged["profiles"][:-1], self.selection["profiles"])
+        self.install_args.candidate = Path(result["selector"])
+        original = companion.read_bytes()
+        companion.write_bytes(candidate.encoded({"nodeRef": "foreign-node", "kind": "codex"}))
+        with self.assertRaisesRegex(ValueError, "remote Codex wrapper pin mismatch"):
+            candidate.install(self.install_args, guard=self.guard)
+        self.assert_unchanged()
+        companion.write_bytes(original)
+        installed = candidate.install(self.install_args, guard=self.guard)
+        self.assertEqual(candidate.read_json(self.selector), staged)
+        self.assertEqual(candidate.read_json(staged["profiles"][-1])["owner"]["ahap_script"], str(runner))
+        candidate.rollback(argparse.Namespace(receipt=Path(installed["rollback_receipt"])), guard=self.guard)
+        self.assert_unchanged()
+        self.assertEqual(self.fresh_db.read_bytes(), self.fresh_db_bytes)
+
     def test_second_browser_registration_rechecks_pins_and_rejects_stale_selector_cas(self):
         self.browser_registration_fixture()
         result = self.stage_browser_registration()
