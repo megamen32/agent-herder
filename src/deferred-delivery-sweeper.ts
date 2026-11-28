@@ -120,7 +120,7 @@ export class DeferredDeliverySweeper {
           let receipt;
           try {
             receipt = await adapter.sendMessage(sessionId, {
-              message: message.message, queue: true, origin: "automation", inputId: `deferred-${message.id}`,
+              ...message.taskOptions, message: message.message, queue: true, origin: "automation", inputId: `deferred-${message.id}`,
             });
           } catch (error) {
             console.error(`[agent-herder] deferred sweep could not address ${adapter.type}:${sessionId}: ${error instanceof Error ? error.message : String(error)}`);

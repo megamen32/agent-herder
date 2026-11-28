@@ -19,6 +19,14 @@ describe('existing deliver model selection',()=>{
    const f=fixture();const r=JSON.parse(await handleDeliver(new Map([['codex',f.adapter]]),f.args));
    expect(r.ok).toBe(true);expect(f.order).toEqual(['model:chosen-model','send:chosen-model']);expect(r.requestedModel).toBe('chosen-model');expect(f.sendMessage).toHaveBeenCalledWith(f.session.id,expect.objectContaining({model:'chosen-model'}));
   });
+  it(`passes task settings through ${named?'named':'exact'} delivery and returns the decision`,async()=>{
+   const f=fixture();
+   const settingsDecision={model:'chosen-model',taskClass:'investigation' as const,reasoningEffort:'low' as const,serviceTier:'normal' as const,effortReason:'caller',tierReason:'caller'};
+   f.adapter.sendMessage=vi.fn(async()=>({ok:true,admitted:true,settingsDecision}));
+   const result=JSON.parse(await handleDeliver(new Map([['codex',f.adapter]]),{...f.args,reasoningEffort:'low',serviceTier:'normal'}));
+   expect(f.adapter.sendMessage).toHaveBeenCalledWith(f.session.id,expect.objectContaining({taskClass:'investigation',reasoningEffort:'low',serviceTier:'normal'}));
+   expect(result.settingsDecision).toEqual(settingsDecision);
+  });
   if (named) it('new_or_resume also sends the explicit model to native inference',async()=>{
    const f=fixture();f.adapter.createSession=vi.fn(async()=>{throw new Error('must reuse exact session');});const result=JSON.parse(await handleNewOrResume(new Map([['codex',f.adapter]]),{
     harness:'codex',name:f.session.title,cwd:f.session.cwd,message:'existing task',model:'chosen-model',mode:'sync',inputId:randomUUID(),

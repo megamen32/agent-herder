@@ -24,6 +24,20 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   query: vi.fn(), listSessions: vi.fn(), getSessionInfo: vi.fn(), getSessionMessages: vi.fn(),
 }));
 
+it("rejects settings for the other harness before opening either native adapter", async () => {
+  const { CodexAppServerAdapter } = await import("../src/adapters/codex-app-server.js");
+  const options = { name: "build", cwd: "/tmp" };
+  const codex = new CodexAppServerAdapter();
+  vi.spyOn(codex as unknown as { ensureReady(): Promise<void> }, "ensureReady").mockRejectedValue(new Error("transport opened"));
+  await expect(codex.createSession({ ...options, effort: "max" })).rejects.toThrow(/effort.*Claude/i);
+  const claude = new ClaudeSDKAdapter();
+  await expect(claude.createSession({ ...options, reasoningEffort: "high" })).rejects.toThrow(/reasoningEffort.*Codex/i);
+  await expect(claude.createSession({ ...options, serviceTier: "fast" })).rejects.toThrow(/serviceTier.*Codex/i);
+  const { ClaudeCodeAdapter } = await import("../src/adapters/claude.js");
+  await expect(new ClaudeCodeAdapter().createSession({ ...options, serviceTier: "fast" })).rejects.toThrow(/serviceTier.*Codex/i);
+  expect(query).not.toHaveBeenCalled();
+});
+
 it("controls one Claude session over MCP and answers an exact permission without reading history", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "herder-stream-test-"));
   const name = "Build";

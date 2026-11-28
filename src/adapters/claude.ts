@@ -123,6 +123,9 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
   }
 
   async createSession(options: CreateSessionOptions): Promise<AgentSession> {
+    if (options.reasoningEffort !== undefined || options.serviceTier !== undefined) {
+      throw new Error("reasoningEffort and serviceTier require the Codex harness");
+    }
     if (options.effort || options.thinkingBudget !== undefined || options.permissionMode) throw new Error("Claude creation settings require ENABLE_CLAUDE_SDK");
     const id = randomUUID();
     const cwd = resolve(options.cwd);

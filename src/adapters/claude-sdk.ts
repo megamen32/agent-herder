@@ -1,3 +1,4 @@
+import type { ClaudeEffectiveSettings } from "../types/common.js";
 import { createHash, randomUUID } from "node:crypto";
 import { PassThrough } from "node:stream";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -37,7 +38,7 @@ class ClaudeStream {
   readonly ready: Promise<unknown>;
   readonly done: Promise<void>;
   readonly pending = new Map<string, { prompt: PermissionRequest; answer: (allow: boolean) => void }>();
-  readonly effective: { model?: string; permissionMode?: string; effort?: string; thinkingBudget: number | null } = { thinkingBudget: null };
+  readonly effective: ClaudeEffectiveSettings = { thinkingBudget: null };
   private readonly acks = new Map<string, Reply>();
   busy = false;
   activeInput?: string;
@@ -217,6 +218,9 @@ export class ClaudeSDKAdapter implements HarnessAdapter {
   }
 
   async createSession(options: CreateSessionOptions) {
+    if (options.reasoningEffort !== undefined || options.serviceTier !== undefined) {
+      throw new Error("reasoningEffort and serviceTier require the Codex harness");
+    }
     const id = randomUUID();
     const { model, effort, permissionMode, thinkingBudget } = options;
     const settings = { model, effort, permissionMode, thinkingBudget };

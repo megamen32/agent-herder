@@ -1224,7 +1224,7 @@ describe("Codex app-server adapter", () => {
       const runningPids = vi.spyOn(transcript, "getRunningCodexPids").mockResolvedValue(new Map());
       const rolloutWriters = vi.spyOn(transcript, "getOpenCodexRolloutPaths").mockResolvedValue(new Set());
       restoreProcessProbes.push(() => runningPids.mockRestore(), () => rolloutWriters.mockRestore());
-      const unsubscribe = adapter.subscribeEvents((event) => events.push({ kind: event.kind, data: event.data }));
+      const unsubscribe = adapter.subscribeEvents((event) => events.push(event));
       await adapter.init();
       expect(adapter.isReady()).toBe(true);
       const sessions = await adapter.listSessions();
@@ -1303,12 +1303,13 @@ describe("Codex app-server adapter", () => {
       };
       const terminalEventsStart = events.length;
       publishTerminalTurn("turn-external-interrupted", "interrupted");
-      for (let attempt = 0; attempt < 100 && events.length === terminalEventsStart; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 5));
-      publishTerminalTurn("turn-normal-completed", "completed");
       for (let attempt = 0; attempt < 100 && events.length < terminalEventsStart + 2; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 5));
+      publishTerminalTurn("turn-normal-completed", "completed");
+      for (let attempt = 0; attempt < 100 && events.length < terminalEventsStart + 4; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 5));
       publishTerminalTurn("turn-normal-failed", "failed");
-      for (let attempt = 0; attempt < 100 && events.length < terminalEventsStart + 3; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 5));
+      for (let attempt = 0; attempt < 100 && events.length < terminalEventsStart + 6; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 5));
       expect(events.slice(terminalEventsStart)).toEqual([
+        expect.objectContaining({ kind: "session.updated", completionState: expect.objectContaining({ turnId: "turn-external-interrupted", outcome: "stopped" }) }),
         expect.objectContaining({
           kind: "turn.completed",
           data: { turnId: "turn-external-interrupted", automationStop: {
@@ -1318,7 +1319,9 @@ describe("Codex app-server adapter", () => {
             turnId: "turn-external-interrupted",
           } },
         }),
+        expect.objectContaining({ kind: "session.updated", completionState: expect.objectContaining({ turnId: "turn-normal-completed", outcome: "completed" }) }),
         expect.objectContaining({ kind: "turn.completed", data: { turnId: "turn-normal-completed" } }),
+        expect.objectContaining({ kind: "session.updated", completionState: expect.objectContaining({ turnId: "turn-normal-failed", outcome: "failed" }) }),
         expect.objectContaining({ kind: "turn.failed", data: { turnId: "turn-normal-failed" } }),
       ]);
       expect(methods).toEqual(expect.arrayContaining([
@@ -2036,7 +2039,7 @@ describe("Codex app-server adapter", () => {
       ]));
       expect(await adapter.cancelTurn("thread-1")).toEqual({ ok: true });
       expect(await adapter.resumeSession("thread-1")).toEqual({ ok: true });
-      expect(await adapter.changeModel("thread-1", "gpt-test-2")).toEqual({ ok: true });
+      expect(await adapter.changeModel("thread-1", "gpt-test-2")).toMatchObject({ ok: true, effectiveSettings: { model: "gpt-test-2", approvalPolicy: "never" } });
 
       const forked = await adapter.forkSession("thread-1", "continue in a child");
       expect(forked.ok).toBe(true);
@@ -2083,8 +2086,9 @@ describe("Codex app-server adapter", () => {
     const message = "generated continuation text";
     try {
       await store.hold({ harness: "codex", id: "thread-1" }, {
-        id: "explicit-stop:test", at: new Date(Date.now() - 60_000).toISOString(), reason: "interrupted", turnId: "prior-turn",
+        id: "explicit-stop:test", at: new Date(Date.now() - 60_000).toISOString(), reason: "explicit-stop", turnId: "prior-turn",
       });
+      await expect(store.isHeld("codex", "thread-1")).resolves.toBe(true);
       await expect(adapter.sendMessage("thread-1", { message, queue: true, origin: "automation" })).resolves.toMatchObject({ ok: true, admitted: true, turnId: expect.any(String) });
 
       const nativePrompt = {
@@ -2312,8 +2316,7 @@ describe("Codex app-server adapter", () => {
       expect(matches).toMatchObject([{ id: "thread-zero-turn", title: name, cwd }]);
       expect(matches).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "thread-archived" })]));
       const duplicate = await createNamedSession(new Map([["codex", adapter]]), { harness: "codex", name, cwd });
-      expect(duplicate).toMatchObject({ ok: false, created: false });
-      expect(duplicate.error).toMatch(/already exists/i);
+      expect(duplicate).toMatchObject({ ok: true, created: false, alreadyExisted: true, ready: false, sessionId: "thread-zero-turn" });
       expect(methods.filter((method) => method === "thread/read")).toHaveLength(2);
       expect(createdThreads).toBe(0);
       expect(methods).not.toContain("thread/start");

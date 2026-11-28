@@ -158,7 +158,7 @@ export class FleetOwnerHttpTransport implements GptAdminTransport {
  }
  schema(target:string):Promise<unknown>{return this.operation(target,10000,async(state,signal)=>{await this.connect(state,signal);await this.info(state,signal);return this.rpc(state,signal,'tools/list',{});});}
  call(target:string,tool:string,args:Record<string,unknown>,idempotencyKey?:string):Promise<unknown>{
-  if(!['model_quotas','fleet_node_info','mesh_snapshot','create_session','fleet_session_page','session_search_local'].includes(tool))return Promise.reject(new Error('owner_http_tool_not_authorized'));
+  if(!['model_quotas','session_settings','fleet_node_info','mesh_snapshot','create_session','fleet_session_page','session_search_local'].includes(tool))return Promise.reject(new Error('owner_http_tool_not_authorized'));
   if(tool==='create_session'&&(!idempotencyKey||!/^[a-f0-9]{64}$/.test(idempotencyKey)))return Promise.reject(new Error('owner_http_create_identity_missing'));
   // Flat native tool args are frozen as a serialized snapshot before any handshake.
   let captured:Record<string,unknown>;

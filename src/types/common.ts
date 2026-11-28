@@ -1,3 +1,4 @@
+import type { TaskOptions, SettingsDecision } from "../effort-tier-policy.js";
 // ===== Shared types for all agent harness adapters =====
 
 import { hostname } from "node:os";
@@ -168,7 +169,26 @@ export interface HarnessCapabilities {
   projects?: boolean;
 }
 
+export interface NativeSessionSettings {
+  model: string | null;
+  reasoningEffort: string | null;
+  serviceTier: CodexServiceTier | null;
+  sandbox: unknown;
+  approvalPolicy: unknown;
+}
+
+export interface ClaudeEffectiveSettings {
+  model?: string;
+  effort?: string;
+  permissionMode?: string;
+  thinkingBudget: number | null;
+}
+
+export type EffectiveSessionSettings = NativeSessionSettings | ClaudeEffectiveSettings;
+
 export interface SendMessageResult {
+  settingsDecision?: SettingsDecision;
+  effectiveSettings?: NativeSessionSettings;
   /** Explicit native admission state; accepted IDs dominate contradictory flags. */
   admission?: "not_submitted" | "accepted" | "pending" | "unknown";
   /** Explicit provider quota proof, usable for fallback only before admission. */
@@ -274,7 +294,7 @@ export interface AgentSession {
   /** Stable short reference (for example z3f9a) derived from harness and native id; presentation layers fill it. */
   shortId?: string;
   /** Harness-specific extra data */
-  meta?: Record<string, unknown>;
+  meta?: Record<string, unknown> & { effectiveSettings?: EffectiveSessionSettings; settingsDecision?: SettingsDecision };
 }
 
 export interface PermissionRequest {
@@ -285,7 +305,7 @@ export interface PermissionRequest {
   details?: string;     // full input or command
 }
 
-export interface SendMessageOptions {
+export interface SendMessageOptions extends TaskOptions {
   /** Explicit model for this native turn; do not replace it with older archive metadata. */
   model?: string;
   /** Internal opted-in Stop judge delivery; separate from one-off fleet recovery. */
@@ -341,7 +361,7 @@ export interface ClaudeCreateSettings {
   permissionMode?: "default" | "plan" | "acceptEdits" | "dontAsk";
 }
 
-export interface CreateSessionOptions extends ClaudeCreateSettings {
+export interface CreateSessionOptions extends ClaudeCreateSettings, TaskOptions {
   /** Dedicated bounded health recovery worker, never a general chat. */
   healthRecovery?: boolean;
   /** Stable human-readable identity within a harness and canonical CWD. */
@@ -551,12 +571,13 @@ export interface HarnessAdapter {
   setPermissions(sessionId: string, options: SetPermissionsOptions): Promise<{ ok: boolean; error?: string }>;
 
   /** Exact native session tier; unknown is never inferred as Normal. */
+  getSessionSettings?(sessionId: string): Promise<NativeSessionSettings>;
   getServiceTier?(sessionId: string): Promise<SessionServiceTierState>;
   /** Change subsequent-turn tier only, preserving model and current work. */
   setServiceTier?(sessionId: string, tier: "normal" | "fast"): Promise<SessionServiceTierResult>;
 
   /** Change the model used by a session or globally for this harness */
-  changeModel?(sessionId: string, model: string): Promise<{ ok: boolean; error?: string }>;
+  changeModel?(sessionId: string, model: string): Promise<ControlResult>;
 
   /** Persist the session's native pinned state when the harness exposes one. */
   setSessionPinned?(sessionId: string, pinned: boolean): Promise<ControlResult>;
