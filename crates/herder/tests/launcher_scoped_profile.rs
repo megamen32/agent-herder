@@ -2667,6 +2667,7 @@ for line in sys.stdin:
     }).to_string()).unwrap();
     let resources = native.root.join("resources-store");
     fs::create_dir(&resources).unwrap();
+    fs::set_permissions(&resources, fs::Permissions::from_mode(0o700)).unwrap();
     let authority = StorageAuthority {
         storage_id: StorageId("native-resource-fixture".into()),
         authority_node: NodeRef("local".into()),
@@ -2677,6 +2678,9 @@ for line in sys.stdin:
     fs::write(resources.join("storage.json"), serde_json::to_vec(&StorageMarker {
         schema: authority.schema.clone(), storage_id: authority.storage_id.clone(),
     }).unwrap()).unwrap();
+    fs::set_permissions(resources.join("storage.json"), fs::Permissions::from_mode(0o600)).unwrap();
+    // Match a provisioned installation before either native owner opens it.
+    herder::application::delivery_keys::DeliveryKeyRegistry::new(authority.clone()).unwrap();
     let resource = ResourceRef("native-resource-slot".into());
     registry::register_or_update(&authority, ResourceDescriptor::new(
         resource.clone(), ResourceScope::Global, ResourceKind::Workspace,
