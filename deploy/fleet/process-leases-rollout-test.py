@@ -670,6 +670,10 @@ class ComponentAncestry(unittest.TestCase):
         native_source = self.git(["rev-parse", "HEAD"])
         tooling = self.repo / "deploy" / "fleet"
         tooling.mkdir(parents=True)
+        (self.repo / "AGENTS.md").write_text("Operator instructions\n")
+        skill = self.repo / "skills" / "native-recovery" / "SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text("Native recovery instructions\n")
         (tooling / "rollout-recovery").write_text("operator command\n")
         subprocess.run(["git", "add", "."], cwd=self.repo, check=True)
         subprocess.run(["git", "commit", "-qm", "operator tooling"], cwd=self.repo, check=True)
