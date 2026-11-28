@@ -213,16 +213,21 @@ def selector_lock(selector):
         os.close(fd)
 
 
-def canonical_migration_identity(manifest):
+def canonical_migration_config(manifest):
     """Use the reviewed source validator, independently of the supplied launcher."""
     if "canonical_migration" not in manifest:
-        return None
+        return None, None
     loader = importlib.machinery.SourceFileLoader(
         "process_leases_trusted_migration_launcher", str(Path(__file__).with_name("launch-v1-core.py")))
     spec = importlib.util.spec_from_loader(loader.name, loader)
     module = importlib.util.module_from_spec(spec)
     loader.exec_module(module)
-    return module.migration_binding(manifest)
+    return module.migration_config(manifest)
+
+
+def canonical_migration_identity(manifest):
+    binding, _ = canonical_migration_config(manifest)
+    return binding
 
 
 def check_selector(selector, launcher, require_worker=True):
@@ -1166,8 +1171,61 @@ def browser_profile_payload(raw, owner, core, binding, *, installed=False):
     return payload
 
 
+def restored_browser_profile(pin, manifest, selection, output):
+    if not isinstance(pin, dict) or set(pin) != {"selector", "profile"}:
+        raise ValueError("invalid historical browser restoration pins")
+    history = read_operator_pin(pin["selector"], output, "historical selector")
+    reviewed = read_operator_pin(pin["profile"], output, "historical browser profile")
+    reviewed_path = pin["profile"]["path"]
+    historical_paths = [path for path in history["profiles"]
+                        if Path(path).resolve() == Path(reviewed_path)]
+    if len(historical_paths) != 1 or any(Path(path).resolve() == Path(reviewed_path)
+                                          for path in selection["profiles"]):
+        raise ValueError("restoration requires a previously selected, currently absent profile")
+    path = historical_paths[0]
+    profile, raw = protected_profile(path)
+    if profile != reviewed or hashlib.sha256(raw).hexdigest() != pin["profile"]["sha256"]:
+        raise ValueError("historical browser profile changed")
+    owner = profile["owner"]
+    if owner["kind"] not in BROWSER_KINDS or owner.get("ahap_script") is not None:
+        raise ValueError("restoration requires a native browser profile")
+    for selected in selection["profiles"]:
+        existing = read_json(private_file(selected))
+        if (existing["owner"]["principal"] != owner["principal"]
+                or existing["owner"]["instance"] == owner["instance"]
+                or existing["generation"] == profile["generation"]
+                or any(Path(existing[key]).resolve() == Path(profile[key]).resolve()
+                       for key in ("database", "gate"))):
+            raise ValueError("historical browser authority conflicts with the active selector")
+    _, config = canonical_migration_config(manifest)
+    if config is None:
+        raise ValueError("restoration requires canonical migration evidence")
+    matches = [snapshot for snapshot in config["quarantine"]["snapshots"]
+               if (snapshot["harness"], snapshot["node_ref"], snapshot["instance_ref"], snapshot["authority_generation"])
+               == (owner["kind"], owner["node"], owner["instance"], profile["generation"])]
+    if len(matches) != 1:
+        raise ValueError("historical browser is not an exact configured quarantine authority")
+    database, gate = Path(profile["database"]), Path(profile["gate"])
+    dm, gm = database.stat(), gate.stat()
+    try:
+        with contextlib.closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as db:
+            db.execute("BEGIN")
+            identity = db.execute(
+                "SELECT generation, gate_device, gate_inode, database_device, database_inode "
+                "FROM humanstop_authority WHERE singleton=1").fetchone()
+            snapshot = db.execute("SELECT value_json FROM settings WHERE scope=? AND setting_key=?",
+                                  ("migration:legacy", "quarantine:v1")).fetchone()
+    except sqlite3.Error:
+        raise ValueError("historical browser authority unavailable") from None
+    if (identity != (profile["generation"], gm.st_dev, gm.st_ino, dm.st_dev, dm.st_ino)
+            or not snapshot or hashlib.sha256(snapshot[0].encode()).hexdigest() != matches[0]["sha256"]
+            or not os.path.samestat(dm, database.stat()) or not os.path.samestat(gm, gate.stat())):
+        raise ValueError("historical browser authority or quarantine snapshot differs")
+    return path, raw
+
+
 def native_profile_plan(base, manifest, selection, output, source, kinds, bindings, *,
-                        recovery_profiles=(), installed=False, legacy_recovery_paths=False):
+                        recovery_profiles=(), installed=False, legacy_recovery_paths=False, restoration=None):
     """Derive every sibling again from the old selector and independent pins."""
     if (not isinstance(kinds, (list, set, tuple)) or not all(isinstance(k, str) for k in kinds)
             or len(set(kinds)) != len(kinds) or not set(kinds) <= NATIVE_PROFILE_UPDATES
@@ -1184,10 +1242,18 @@ def native_profile_plan(base, manifest, selection, output, source, kinds, bindin
         reviewed[identity] = raw
     matched = set()
     snapshots, planned, used_bindings = {}, [], set()
-    for selected in selection["profiles"]:
+    restored_path, restored_raw = (restored_browser_profile(restoration, manifest, selection, output)
+                                   if restoration is not None else (None, None))
+    selected_paths = [*selection["profiles"], *([restored_path] if restored_path else [])]
+    for selected in selected_paths:
         path = private_file(selected)
         raw = path.read_bytes()
-        snapshots[selected] = profile_hash = hashlib.sha256(raw).hexdigest()
+        profile_hash = hashlib.sha256(raw).hexdigest()
+        if selected == restored_path:
+            if raw != restored_raw:
+                raise ValueError("historical browser profile changed during composition")
+        else:
+            snapshots[selected] = profile_hash
         owner = strict_json(raw)["owner"]
         kind = owner.get("kind")
         script = owner.get("ahap_script")
@@ -1201,7 +1267,7 @@ def native_profile_plan(base, manifest, selection, output, source, kinds, bindin
                 continue
             if script is None and kind == "opencode":
                 continue  # The native OpenCode owner retains the Node and endpoint pins.
-            if owner.get("executable") != base["core" if native_browser else "node"]:
+            if selected != restored_path and owner.get("executable") != base["core" if native_browser else "node"]:
                 raise ValueError("previous owner does not select the exact installed executable")
             if not native_browser and (not isinstance(script, str) or script != base["adapters"].get(kind)):
                 raise ValueError("previous owner does not select the reviewed local runner")
@@ -1221,7 +1287,8 @@ def native_profile_plan(base, manifest, selection, output, source, kinds, bindin
             if kind in bindings:
                 binding = read_browser_binding(bindings[kind], output, kind, profile_hash)
                 used_bindings.add(kind)
-            payload = browser_profile_payload(raw, owner, manifest["core"], binding, installed=installed)
+            payload = browser_profile_payload(raw, owner, manifest["core"], binding,
+                                              installed=installed or selected == restored_path)
         after_hash = hashlib.sha256(payload).hexdigest()
         # Schema 1 recovery receipts recorded the resolved authority directory.
         parent = path.parent if recovering and legacy_recovery_paths else authority_parent(path, profile)
@@ -1254,13 +1321,13 @@ def stage_native_payloads(planned):
 
 
 def stage_native_profile_migration(base, manifest, selection, selector, output, source, kinds, bindings=None, *,
-                                   recovery_profiles=()):
+                                   recovery_profiles=(), restoration=None):
     # Earlier callers supplied the recovery profile paths as the eighth positional argument.
     if isinstance(bindings, (list, tuple)) and not recovery_profiles:
         recovery_profiles, bindings = bindings, None
     bindings = {} if bindings is None else bindings
     snapshots, planned = native_profile_plan(base, manifest, selection, output, source, kinds, bindings,
-                                             recovery_profiles=recovery_profiles)
+                                             recovery_profiles=recovery_profiles, restoration=restoration)
     if not planned:
         return None
     payload_dir = output / "profile-payloads"
@@ -1278,6 +1345,8 @@ def stage_native_profile_migration(base, manifest, selection, selector, output, 
                  "base_selector": str(selector), "base_selector_sha256": digest(selector),
                  "base_manifest": selection["manifest"], "base_manifest_sha256": selection["manifest_sha256"],
                  "profile_sha256": snapshots, "profiles": profiles}
+    if restoration is not None:
+        migration["restoration"] = restoration
     path = output / "native-profile-migration.json"
     create(path, encoded(migration), 0o400)
     manifest["native_profile_migration"] = str(path)
@@ -1449,6 +1518,8 @@ def native_profile_transition(old, new, before, after, *, installed=False):
     elif schema == 2:
         fields.update(("kinds", "bindings"))
         kinds, bindings = migration.get("kinds"), migration.get("bindings")
+        if "restoration" in migration:
+            fields.add("restoration")
     else:
         raise ValueError("unsupported native profile migration")
     source = after.get("source_commit")
@@ -1480,7 +1551,8 @@ def native_profile_transition(old, new, before, after, *, installed=False):
             raise ValueError("native recovery migration requires a reviewed recovery profile")
     snapshots, planned = native_profile_plan(before, after, old, bundle, source, kinds, bindings,
                                              recovery_profiles=recovery_profiles, installed=installed,
-                                             legacy_recovery_paths=recovering and schema == 1)
+                                             legacy_recovery_paths=recovering and schema == 1,
+                                             restoration=migration.get("restoration"))
     if snapshots != migration["profile_sha256"]:
         raise ValueError("previous protected profile changed or snapshot is incomplete")
     pinned_authority = any("authority_directory" in row for row, _ in planned)
@@ -1490,6 +1562,9 @@ def native_profile_transition(old, new, before, after, *, installed=False):
     expected = copy.deepcopy(old)
     expected.update(manifest=new["manifest"], manifest_sha256=new["manifest_sha256"])
     expected["profiles"] = [rebound[path]["path"] if path in rebound else path for path in old["profiles"]]
+    if "restoration" in migration:
+        restored, = set(rebound) - set(old["profiles"])
+        expected["profiles"].append(rebound[restored]["path"])
     if expected != new:
         raise ValueError("selector differs from exact native profile transition")
     return migration
@@ -1695,6 +1770,14 @@ def build(args):
     updates = getattr(args, "adapter_update", [])
     native_updates = getattr(args, "native_update", [])
     recovery_profiles = getattr(args, "native_recovery_profile", [])
+    restore = getattr(args, "restore_browser", None)
+    restoration = None
+    if restore:
+        if updates or native_updates or recovery_profiles:
+            raise ValueError("restore the historical browser without other explicit profile changes")
+        selector_path, selector_hash, profile_path, profile_hash = restore
+        restoration = {"selector": {"path": selector_path, "sha256": selector_hash},
+                       "profile": {"path": profile_path, "sha256": profile_hash}}
     if len(set(updates)) != len(updates) or not set(updates) <= ADAPTER_UPDATES:
         raise ValueError("select each reviewed adapter update once")
     if len(set(native_updates)) != len(native_updates) or not set(native_updates) <= NATIVE_PROFILE_UPDATES:
@@ -1781,7 +1864,8 @@ def build(args):
         migration = stage_adapter_migration(base, manifest, selection, selector, output, sha, adapters, adapter_build)
     else:
         migration = stage_native_profile_migration(base, manifest, selection, selector, output, sha,
-                                                  native_updates, browser_bindings, recovery_profiles=recovery_profiles)
+                                                  native_updates, browser_bindings, recovery_profiles=recovery_profiles,
+                                                  restoration=restoration)
     if (git("rev-parse", "HEAD") != sha or git("status", "--porcelain")
             or digest(selector) != before or digest(base_path) != selection["manifest_sha256"]
             or any(digest(private_file(path)) != value for path, value in profile_hashes.items())):
@@ -1792,6 +1876,9 @@ def build(args):
     if migration:
         rebound = {item["previous_path"]: item["path"] for item in migration["profiles"]}
         candidate_selection["profiles"] = [rebound.get(path, path) for path in selection["profiles"]]
+        if restoration is not None:
+            restored, = set(rebound) - set(selection["profiles"])
+            candidate_selection["profiles"].append(rebound[restored])
     create(output / "selector.json", encoded(candidate_selection), 0o400)
     build_receipt = {"source_commit": sha, "base_selector": str(selector),
                      "base_selector_sha256": before, "base_manifest_sha256": selection["manifest_sha256"],
@@ -1975,6 +2062,8 @@ def main():
                    help="reviewed successor profile for Codex inventory, shared socket, recovery handoff or session autopilot")
     b.add_argument("--browser-binding", action="append", nargs=3, default=[], metavar=("KIND", "FILE", "SHA256"),
                    help="pin a private operator-reviewed browser binding for a selected browser")
+    b.add_argument("--restore-browser", nargs=4, metavar=("SELECTOR", "SELECTOR_SHA256", "PROFILE", "PROFILE_SHA256"),
+                   help="restore a previously selected native browser with its existing canonical quarantine")
     a = sub.add_parser("register-browser", help="stage one additional browser owner using the installed release")
     for name in ("selector", "launcher", "output"):
         a.add_argument("--" + name, required=True, type=Path)

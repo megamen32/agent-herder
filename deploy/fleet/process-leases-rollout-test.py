@@ -689,6 +689,8 @@ class ComponentAncestry(unittest.TestCase):
         self.after["process_leases_build"]["source_commit"] = native_source
         git_dir = self.repo / ".git"
         self.assertEqual(rollout.scheduler_source(git_dir, self.after, browser, receipt), self.new)
+        restoration = {**browser, "kinds": [], "restoration": {"selector": {}, "profile": {}}}
+        self.assertEqual(rollout.scheduler_source(git_dir, self.after, restoration, receipt), self.new)
         mixed = {**browser, "kinds": ["chatgpt", "opencode"]}
         self.assertEqual(rollout.scheduler_source(git_dir, self.after, mixed, receipt), native_source)
         self.after["process_leases_build"]["source_commit"] = self.commit("changed scheduler input")

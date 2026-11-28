@@ -648,7 +648,8 @@ def scheduler_source(git_dir, proposed, migration, receipt):
     browser_migration = (
         migration is not None and migration.get("schema") == 2
         and migration.get("type") == "herder-native-profile-rebind"
-        and kinds and set(kinds) <= candidate.BROWSER_KINDS
+        and ((kinds and set(kinds) <= candidate.BROWSER_KINDS)
+             or (kinds == [] and "restoration" in migration))
     )
     remote_registration = (
         migration is not None and migration.get("schema") == 2
