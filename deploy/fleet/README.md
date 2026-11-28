@@ -1,8 +1,10 @@
 # Agent Herder fleet deployment
 
-Status: Linux100/44/88 deployed. One real cabinet-created Codex session on88 has native same-ID readback and headed HTTPS opening proof. Mac launchers are source-verified; their first real startup exposed a Darwin thread-table parser error and remains unaccepted until repaired and rerun. Whole fleet and the parent shared-MCP migration remain open. The fleet-node rollout itself is accepted on 5e8b2fd for 44, 88, Mac Mini and M1; the native launcher defect above stays open.
+Server 100 runs the central Herder. Remote machines run their native harnesses and scoped executors. Use the [current deployment state](../../docs/AGENT-HERDER-CURRENT-STATE.md) for placement, accepted paths and open checks.
 
-The target is a local native Herder on server100, server44, server88, Mac Mini and Mac M1. The cabinet lists and filters sessions by host and creates a session with an explicit host and harness. Preserve native authentication, existing sessions and reverse SSH.
+## Historical fleet deployments
+
+The per-host layouts, commands, budgets and acceptance records below describe the former deployment. Installing an owner on each host would recreate that topology. Direct central upgrades through the release coordinator on server 100.
 
 ## Upgrade native recovery owners
 
