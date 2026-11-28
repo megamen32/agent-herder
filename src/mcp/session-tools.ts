@@ -1,3 +1,4 @@
+import { taskOptions } from "../effort-tier-policy.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { hostname } from "node:os";
 import { createHash } from "node:crypto";
@@ -816,7 +817,7 @@ export function registerSessionTools(server: McpServer, deps: {
       ? JSON.stringify({ delivery, response })
       : delivery }] };
   });
-  server.registerTool("create_session", { description: "Create one named OpenCode, Codex, ZCode, or Fast Agent session in an absolute canonical working directory. Codex serviceTier defaults to normal; serviceTier is rejected for other harnesses.", inputSchema: CreateSessionSchema }, async (args) => {
+  server.registerTool("create_session", { description: "Create one named OpenCode, Codex, ZCode, or Fast Agent session in an absolute canonical working directory. Codex chooses effort and tier from the task, model capabilities and quota. Returns the decision, native settings and readiness.", inputSchema: CreateSessionSchema }, async (args) => {
     const hostId = normalizeHostId(args.hostId, hostname());
     if (hostId.toLowerCase() !== hostname().toLowerCase()) {
       const peer = selectedRemotePeer(hostId);
@@ -827,7 +828,7 @@ export function registerSessionTools(server: McpServer, deps: {
       const target = `mcp:shell:${peer.hostId}:AgentHerder`;
       const info = unwrapResult(await transport.call(target, "fleet_node_info", {}));
       if (info.hostId !== peer.hostId || info.guardedNamedCreate !== true) throw new Error("remote_named_create_guard_unavailable");
-      const request = { harness: args.harness, name: args.name, cwd: args.cwd, ...(args.model ? { model: args.model } : {}), ...(args.serviceTier ? { serviceTier: args.serviceTier } : {}) };
+      const request = { harness: args.harness, name: args.name, cwd: args.cwd, ...(args.model ? { model: args.model } : {}), ...taskOptions(args) };
       const intent = createHash("sha256").update(JSON.stringify(["named-session-v1", peer.hostId, args.harness, args.name, args.cwd])).digest("hex");
       const remote = unwrapResult(await transport.call(target, "create_session", request, intent));
       const result = { ...remote, hostId: peer.hostId };
@@ -866,6 +867,9 @@ export function registerSessionTools(server: McpServer, deps: {
       if (scope?.kind === "deny") throw new Error("project_session_scope_unavailable");
       if (scope && scope.kind !== "ordinary") throw new Error("remote_project_delivery_unsupported");
       try {
+        if (Object.keys(taskOptions(args)).length) {
+          return await (peerTransport ?? new FleetDirectTransport([peer])).call(`mcp:shell:${peer.hostId}:AgentHerder`, "deliver", { ...args, hostId: peer.hostId }) as {content:Array<{type:"text";text:string}>};
+        }
         return await (peerTransport ?? new FleetDirectTransport([peer])).call(`mcp:shell:${peer.hostId}:AgentHerder`, "send_message", {sessionId:args.sessionId,harness:args.harness,inputId:args.inputId,message:args.message,mode:"queue"}) as {content:Array<{type:"text";text:string}>};
       } catch {
         return {content:[{type:"text" as const,text:JSON.stringify({ok:false,delivery:"unknown",inputId:args.inputId,admissionUnknown:true,nonRetryable:true,error:"remote_delivery_outcome_unknown"})}]};
@@ -905,6 +909,23 @@ export function registerSessionTools(server: McpServer, deps: {
     sessionId: z.string().trim().min(1).max(512),
     harness: z.literal("codex").default("codex"),
     hostId: z.string().trim().min(1).max(512).optional().describe("Exact owning machine. Omitted uses this host."),
+  });
+  server.registerTool("session_settings", {
+    description: "Read one loaded Codex thread's native model, reasoning effort, tier, sandbox and approval policy.",
+    inputSchema: tierTarget.strict(),
+  }, async args => {
+    const owner = normalizeHostId(args.hostId, hostname());
+    if (owner !== hostname()) {
+      const peer = selectedRemotePeer(owner);
+      if (!peer) throw new Error(`host_target_unavailable:${owner}`);
+      return await (peerTransport ?? new FleetDirectTransport([peer])).call(`mcp:shell:${peer.hostId}:AgentHerder`, "session_settings", args) as {content: Array<{type:"text";text:string}>};
+    }
+    const route = await sessionRoute(args);
+    if (route.denied || route.hostTargetUnavailable) throw new Error("Session settings scope unavailable");
+    const adapter = route.adapters.get("codex");
+    if (!adapter?.getSessionSettings) throw new Error("Native session settings unavailable");
+    const effectiveSettings = await adapter.getSessionSettings(args.sessionId);
+    return { content: [{type: "text" as const, text: JSON.stringify({sessionId: args.sessionId, effectiveSettings})}] };
   });
   const tierControl = async (args: { sessionId: string; harness: "codex"; hostId?: string; serviceTier?: "normal" | "fast" }) => {
     const owner = normalizeHostId(args.hostId, hostname());
@@ -946,7 +967,7 @@ export function registerSessionTools(server: McpServer, deps: {
     const result = await handleResumeAgent(route.adapters, route.args); publishSessionsChanged();
     return { content: [{ type: "text" as const, text: result }] };
   });
-  server.registerTool("change_model", { description: "Change the AI model for a harness. For OpenCode: per-session or global. For Claude/Codex/Qoder/ZCode: per-session where supported by the harness.", inputSchema: z.object({ sessionId: z.string().optional(), harness: harnessSchema, model: z.string() }) }, async (args) => {
+  server.registerTool("change_model", { description: "Change the AI model for a harness. For OpenCode: per-session or global. For Claude/Codex/Qoder/ZCode: per-session where supported by the harness.", inputSchema: z.object({ sessionId: z.string().optional(), harness: harnessSchema, model: z.string() }).strict() }, async (args) => {
     const route = await sessionRoute(args);
     if (route.denied) throw new Error("project_session_scope_unavailable");
     if (route.hostTargetUnavailable) throw new Error(`host_target_unavailable:${route.hostTargetUnavailable}`);

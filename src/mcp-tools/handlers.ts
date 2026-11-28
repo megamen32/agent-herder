@@ -1,3 +1,4 @@
+import { taskOptions } from "../effort-tier-policy.js";
 import { recordProjectLifecycle } from "../project-integration.js";
 import { projectReleaseLeases } from "../project-release-lease.js";
 import {meshDiscoveryTimeoutMs} from "../mesh/discovery-timeout.js";
@@ -786,9 +787,13 @@ export async function handleDeliver(adapters: Map<string, HarnessAdapter>, args:
 async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown): Promise<string> {
   const parsed = DeliverSchema.parse(args);
   const deliveredMessage = parsed.message;
+  if (parsed.harness && parsed.harness !== "codex" && (parsed.serviceTier || parsed.reasoningEffort))
+    throw new Error("Task settings require a Codex target");
   if (parsed.sessionId) {
     const found = await findSession(adapters, parsed.sessionId, parsed.harness);
     if (!found) return JSON.stringify({ ok:false, delivery:"not_found", activated:false, error:`Session '${parsed.sessionId}' not found.` });
+    if (found.adapter.type !== "codex" && (parsed.serviceTier || parsed.reasoningEffort))
+      throw new Error("Task settings require a Codex target");
     const prior = await previousCoordinationReceipt(found.adapter,parsed.sessionId,parsed.inputId);
     if (prior) return prior;
     const fresh = await found.adapter.getSession(parsed.sessionId);
@@ -804,11 +809,11 @@ async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown)
     // interrupted job never loses the message; current-turn-only delivery keeps
     // its no-deferred-debt contract.
     const pending = activation !== "if_running"
-      ? await parkForDelivery(fresh.harness, fresh.id, deliveredMessage)
+      ? await parkForDelivery(fresh.harness, fresh.id, deliveredMessage, taskOptions(parsed, parsed.message))
       : await withDeferred(fresh.id, deliveredMessage);
     const injected = await compactAutomaticMessage(await coordinationNotes.inject(fresh, pending.message), parsed.message);
     if (await automaticDeliveryHeld(fresh, false, found.adapter)) return JSON.stringify({ ok: false, delivery: "not_attempted", activated: false, error: HUMAN_STOP_MESSAGE });
-    const options = {message:injected,model:parsed.model,retainedInboxIds:pending.ids,queue:parsed.mode==="queue",inputId:parsed.inputId ?? createHash("sha256").update(parsed.message).digest("hex"),origin:"automation" as const};
+    const options = {...taskOptions(parsed, parsed.message),message:injected,model:parsed.model,retainedInboxIds:pending.ids,queue:parsed.mode==="queue",inputId:parsed.inputId ?? createHash("sha256").update(parsed.message).digest("hex"),origin:"automation" as const};
     const sent = activation === 'if_running' ? await sendCurrentTurnOnly(found.adapter,fresh.id,options) : await found.adapter.sendMessage(fresh.id,options);
     if (sent.notSubmitted) return sent.error?.startsWith('skipped_inactive') ? skippedCoordination(fresh)
       : JSON.stringify({ok:false,delivery:'not_attempted',activated:false,error:sent.error});
@@ -824,6 +829,7 @@ async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown)
       return JSON.stringify({ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"deferred",activated:false});
     }
     const receipt = {
+      ...(sent.settingsDecision && {settingsDecision:sent.settingsDecision}),
       ...(parsed.model ? {requestedModel:parsed.model} : {}),
       ...(sent.admissionKind ? {admissionKind:sent.admissionKind} : {}),
       ...(sent.admitted !== undefined ? {admitted:sent.admitted} : {}),
@@ -837,7 +843,7 @@ async function deliverOnce(adapters: Map<string, HarnessAdapter>, args: unknown)
         : {ok:true,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:parsed.mode==="queue"?"accepted":"completed",activated:activation !== 'if_running'}
       : {ok:false,sessionId:fresh.id,harness:fresh.harness,sessionStatus:fresh.status,delivery:"failed",activated:false,...(sent.nonRetryable?{nonRetryable:true}:{}),error:sent.error||"Message delivery failed"})});
   }
-  return JSON.stringify(await deliverNamedSession(adapters,{harness:parsed.harness!,name:parsed.name!,cwd:parsed.cwd!,message:await compactAutomaticMessage(deliveredMessage),inputId:parsed.inputId ?? createHash("sha256").update(parsed.message).digest("hex"),create:parsed.create,activation:parsed.activation,mode:parsed.mode,model:parsed.model,sourceSessionId:parsed.sourceSessionId,sourceHarness:parsed.sourceHarness,sourceSessions:parsed.sourceSessions}));
+  return JSON.stringify(await deliverNamedSession(adapters,{...taskOptions(parsed, parsed.message),harness:parsed.harness!,name:parsed.name!,cwd:parsed.cwd!,message:await compactAutomaticMessage(deliveredMessage),inputId:parsed.inputId ?? createHash("sha256").update(parsed.message).digest("hex"),create:parsed.create,activation:parsed.activation,mode:parsed.mode,model:parsed.model,sourceSessionId:parsed.sourceSessionId,sourceHarness:parsed.sourceHarness,sourceSessions:parsed.sourceSessions}));
 }
 
 /** The admission receipt of one stop: the fleet peer transport reads the same
@@ -1088,6 +1094,7 @@ export async function handleChangeModel(
   // If sessionId provided, try per-session change
   if (parsed.sessionId) {
     const result = await adapter.changeModel(parsed.sessionId, parsed.model);
+    if (result.effectiveSettings) return JSON.stringify(result);
     if (result.ok) {
       return result.error || `Model changed to '${parsed.model}' for session ${parsed.sessionId} on ${adapter.name}.`;
     }

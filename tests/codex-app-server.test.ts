@@ -2030,7 +2030,7 @@ describe("Codex app-server adapter", () => {
       ]));
       expect(await adapter.cancelTurn("thread-1")).toEqual({ ok: true });
       expect(await adapter.resumeSession("thread-1")).toEqual({ ok: true });
-      expect(await adapter.changeModel("thread-1", "gpt-test-2")).toEqual({ ok: true });
+      expect(await adapter.changeModel("thread-1", "gpt-test-2")).toMatchObject({ ok: true, effectiveSettings: { model: "gpt-test-2", approvalPolicy: "never" } });
 
       const forked = await adapter.forkSession("thread-1", "continue in a child");
       expect(forked.ok).toBe(true);
@@ -2306,8 +2306,7 @@ describe("Codex app-server adapter", () => {
       expect(matches).toMatchObject([{ id: "thread-zero-turn", title: name, cwd }]);
       expect(matches).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "thread-archived" })]));
       const duplicate = await createNamedSession(new Map([["codex", adapter]]), { harness: "codex", name, cwd });
-      expect(duplicate).toMatchObject({ ok: false, created: false });
-      expect(duplicate.error).toMatch(/already exists/i);
+      expect(duplicate).toMatchObject({ ok: true, created: false, alreadyExisted: true, ready: false, sessionId: "thread-zero-turn" });
       expect(methods.filter((method) => method === "thread/read")).toHaveLength(2);
       expect(createdThreads).toBe(0);
       expect(methods).not.toContain("thread/start");

@@ -20,7 +20,8 @@ describe("fleet creation through the caller and owner MCPs", () => {
     const consumer = new Client({ name: "consumer", version: "1" });
     let localCreates = 0;
     let ownerCreates = 0;
-    const ownerAdapter = { createSession: async ({ cwd, name }: { cwd: string; name: string }) => { ownerCreates++; if (name === "ci-uncertain") throw new Error("lost after admission"); return { id: "owner-session", cwd }; } };
+    const settings = {model:"test",reasoningEffort:"low",serviceTier:"normal",sandbox:null,approvalPolicy:null};
+    const ownerAdapter = { getSession: async () => ({id:"owner-session"}), createSession: async ({ cwd, name }: { cwd: string; name: string }) => { ownerCreates++; if (name === "ci-uncertain") throw new Error("lost after admission"); return { id: "owner-session", cwd, meta:{effectiveSettings:settings} }; } };
     const localAdapter = { createSession: async () => { localCreates++; throw new Error("wrong owner"); } };
     const journal = new FleetCreateJournal(join(dir, "journal.json"), { profileId: "test", userId: "test" });
     registerFleetNodeTools(owner, { adapters: new Map([["codex", ownerAdapter as never]]), ownerJournal: journal });
@@ -46,8 +47,8 @@ describe("fleet creation through the caller and owner MCPs", () => {
       const first = await consumer.callTool({ name: "create_session", arguments: args });
       const second = await consumer.callTool({ name: "create_session", arguments: args });
       const conflict = await consumer.callTool({ name: "create_session", arguments: { ...args, model: "different-model" } });
-      expect(first.structuredContent).toMatchObject({ ok: true, sessionId: "owner-session", hostId: "server-44" });
-      expect(second.structuredContent).toMatchObject({ ok: true, sessionId: "owner-session", hostId: "server-44" });
+      expect(first.structuredContent).toMatchObject({ ok: true, ready:true, alreadyExisted:false, effectiveSettings:settings, sessionId: "owner-session", hostId: "server-44" });
+      expect(second.structuredContent).toMatchObject({ ok: true, ready:true, alreadyExisted:true, effectiveSettings:settings, sessionId: "owner-session", hostId: "server-44" });
       expect(conflict.structuredContent).toMatchObject({ ok: false, created: false, reason: "input_id_conflict" });
       expect(ownerCreates).toBe(1);
       expect(localCreates).toBe(0);

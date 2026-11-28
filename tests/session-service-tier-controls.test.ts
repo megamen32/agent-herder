@@ -58,3 +58,31 @@ it("exposes exact-session get/set through real MCP registration", async () => {
   const wrong = await client.callTool({ name: "set_service_tier", arguments: { sessionId: "mcp-exact", hostId: "unknown-tier-host", serviceTier: "fast" } });
   expect(wrong.isError).toBe(true); expect(f.setServiceTier).toHaveBeenCalledTimes(1);
 });
+
+it("reads settings and rejects unknown model-set fields at the consolidated MCP entry", async () => {
+  const { withToolConsolidation } = await import("../src/mcp/tool-consolidation.js");
+  const { adapter } = fixture();
+  const effectiveSettings = {model:"observed",reasoningEffort:"low",serviceTier:"normal" as const,sandbox:"read-only",approvalPolicy:"on-request"};
+  adapter.getSessionSettings = vi.fn(async () => effectiveSettings);
+  adapter.changeModel = vi.fn(async () => ({ok:true,effectiveSettings}));
+  const events = new HerderEventBus();
+  const server = new McpServer({name:"settings-test", version:"1"});
+  withToolConsolidation(server, () => registerSessionTools(server, {adapters:new Map([["codex",adapter]]),events,jobs:new HerderJobRegistry(events)}), new Set());
+  const [ct, st] = InMemoryTransport.createLinkedPair();
+  const client = new Client({name:"settings-client",version:"1"});
+  await server.connect(st); await client.connect(ct);
+  cleanups.push(async () => { await client.close(); await server.close(); });
+  const target = {harness:"codex", sessionId:"exact"};
+  for (const field of ["effort","reasoningEffort"]) {
+    const invalid = await client.callTool({name:"model",arguments:{action:"set", ...target, model:"observed", [field]:"high"}});
+    expect(invalid.isError).toBe(true);
+  }
+  expect(adapter.changeModel).not.toHaveBeenCalled();
+  for (const request of [
+    {name:"model",arguments:{action:"set",...target,model:"observed"}},
+    {name:"session_settings",arguments:target},
+  ]) {
+    const result = await client.callTool(request);
+    expect(JSON.parse((result.content as {text:string}[])[0]!.text)).toMatchObject({effectiveSettings});
+  }
+});

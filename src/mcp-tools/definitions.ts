@@ -1,3 +1,4 @@
+import { efforts, taskClasses } from "../effort-tier-policy.js";
 import { Tool } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { MAX_MODEL_LENGTH } from "../automation-launch-policy.js";
@@ -108,7 +109,21 @@ export const SendMessageSchema = z.object({
   ),
 });
 
+export const taskFields = {
+  reasoningEffort: z.enum(efforts).optional().describe("Explicit Codex effort. The target model must advertise this level."),
+  taskClass: z.enum(taskClasses).optional().describe("Class for automatic Codex effort and speed selection. Omit to classify the task text."),
+  latencySensitive: z.boolean().optional().describe("Prefer Fast when the recipient model and quota permit it."),
+};
+
+const taskProperties = {
+  taskClass: { type: "string", enum: [...taskClasses] },
+  reasoningEffort: { type: "string", enum: [...efforts] },
+  latencySensitive: { type: "boolean" },
+  serviceTier: { type: "string", enum: ["normal", "fast"] },
+};
+
 const NamedSessionBaseSchema = z.object({
+  ...taskFields,
   sourceSessions: z.array(z.object({ harness: z.enum(["codex", "zcode", "opencode", "fast-agent"]), sessionId: z.string().min(1).max(512) })).max(32).optional().describe("All verified native source/ancestor receipts for an automatic continuation. Any stopped source prohibits launch."),
   sourceSessionId: z.string().min(1).optional().describe("Original session ID when this creation is a continuation/replacement; a stopped source prohibits automatic creation."),
   sourceHarness: z.enum(["codex", "zcode", "opencode", "fast-agent"]).optional(),
@@ -117,7 +132,7 @@ const NamedSessionBaseSchema = z.object({
   cwd: z.string().min(1).describe("Absolute working directory. It is canonicalized before identity matching."),
   hostId: hostTarget(HOST_TARGET_DESCRIPTION),
   model: z.string().trim().min(1).max(MAX_MODEL_LENGTH).regex(/^[^\u0000-\u001f\u007f]*$/).optional().describe("Optional model selected before the first message is delivered."),
-  serviceTier: z.enum(["normal", "fast"]).optional().describe("Codex only. Applies only if a new session is created; defaults to normal and never changes an existing named session."),
+  serviceTier: z.enum(["normal", "fast"]).optional().describe("Codex only. Overrides the tier policy for a newly created session. Fast requires model support and quota."),
 });
 
 export const CreateSessionSchema = NamedSessionBaseSchema;
@@ -134,6 +149,8 @@ export const NewOrResumeSchema = NamedSessionBaseSchema.extend({
 });
 
 export const DeliverSchema = z.object({
+  ...taskFields,
+  serviceTier: z.enum(["normal", "fast"]).optional(),
   attachments: z.never().optional().describe("Inline files require an exact target and sender."),
   inputId: z.string().min(1).max(256).optional().describe("Stable delivery ID. Retry with the same ID; Codex deduplicates native admission for 24 hours."),
   sourceSessions: z.array(z.object({ harness: z.enum(["codex", "zcode", "opencode", "fast-agent"]), sessionId: z.string().min(1).max(512) })).max(32).optional(),
@@ -152,6 +169,7 @@ export const DeliverSchema = z.object({
   deliverIn: z.number().int().min(1).max(30 * 24 * 3600).optional().describe("Delay in seconds before delivery (600 = in 10 minutes). Omit for immediate delivery. Exactly one of deliverIn/deliverAt."),
   deliverAt: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/).optional().describe("Absolute RFC3339 delivery time instead of a delay. Exactly one of deliverIn/deliverAt."),
 }).superRefine((v,ctx)=>{
+  if ((v.deliverIn !== undefined || v.deliverAt !== undefined || v.activation === "defer") && (v.reasoningEffort || v.taskClass || v.serviceTier || v.latencySensitive !== undefined)) ctx.addIssue({code:"custom",message:"Deferred delivery cannot retain task settings"});
   const named=Boolean(v.harness && v.name && v.cwd);
   if (!v.sessionId && !named) ctx.addIssue({code:z.ZodIssueCode.custom,message:"Provide sessionId or harness+name+cwd"});
   if (v.sessionId && (v.name || v.cwd)) ctx.addIssue({code:z.ZodIssueCode.custom,message:"Use either sessionId or named target fields, not both"});
@@ -215,7 +233,7 @@ export const ChangeModelSchema = z.object({
   ),
   harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "zai", "browser-chat"]).describe("Which harness to change model for."),
   model: z.string().describe("The model name to use (e.g. 'claude-sonnet-4-20250514', 'gpt-4o', 'o4-mini')."),
-});
+}).strict();
 
 export const ListModelsSchema = z.object({
   harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "zai", "browser-chat"]).optional().describe(
@@ -316,6 +334,7 @@ export const toolDefinitions: Tool[] = [
         name: { type: "string", description: "Stable session name, for example repair_100" },
         cwd: { type: "string", description: "Absolute working directory" },
         hostId: { type: "string", description: "Machine the work runs on; defaults to localhost (this Agent Herder host)" },
+        ...taskProperties,
         model: { type: "string", maxLength: MAX_MODEL_LENGTH, description: "Optional model selected before first delivery" },
       },
       required: ["harness", "name", "cwd"],
@@ -333,6 +352,7 @@ export const toolDefinitions: Tool[] = [
         hostId: { type: "string", description: "Machine the work runs on; defaults to localhost (this Agent Herder host)" },
         message: { type: "string", description: "Message to deliver" },
         mode: { type: "string", enum: ["queue", "sync"], default: "sync", description: "Delivery mode" },
+        ...taskProperties,
         model: { type: "string", maxLength: MAX_MODEL_LENGTH, description: "Optional model selected before first delivery" },
         fallbackModels: { type: "array", maxItems: 8, items: { type: "string", maxLength: MAX_MODEL_LENGTH }, description: "Optional ordered same-harness fallbacks; if omitted, OpenCode GLM 5.3 Flash defaults to MiniMax M3.1 Flash. Used only after a definite pre-admission HTTP 429 or provider quota rejection." },
       },
@@ -436,6 +456,7 @@ export const toolDefinitions: Tool[] = [
         hostId: { type: "string", description: "Machine the work runs on; defaults to localhost (this Agent Herder host)" },
         name: { type: "string" }, cwd: { type: "string" }, message: { type: "string" },
         inputId: { type: "string", description: "Stable idempotent delivery ID (Codex: 24 hour retry window)" },
+        ...taskProperties,
         create: { type: "string", enum: ["if_missing","never"], default: "if_missing" },
         activation: { type: "string", enum: ["always","if_running","defer"] },
         mode: { type: "string", enum: ["queue","sync"], default: "queue" }, model: { type: "string" },

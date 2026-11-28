@@ -228,3 +228,19 @@ describe('fleet cached child health versus live native proof (fast unit; expecte
   expect(r.hosts[0]?.state).toBe('unavailable');expect(r.hosts[0]?.reason).toBe('native_owner_identity_mismatch');expect(r.hosts[0]?.createHarnesses).toEqual([]);expect(t.call).toHaveBeenCalledTimes(1);
  });
 });
+
+it("reconciles a lost owner receipt from exact native identity and persists it before replay",async()=>{
+ const {mkdtemp,rm}=await import("node:fs/promises");
+ const {join}=await import("node:path");
+ const root=await mkdtemp("/tmp/herder-owner-reconcile-");
+ try {
+  const journal=new FleetCreateJournal(join(root,"journal.json"),{profileId:"p",userId:"u"});
+  const request={hostId:"100",harness:"codex" as const,name:"inspect",cwd:"/work",inputId:"stable"};
+  const operation=vi.fn(async()=>{throw new Error("lost response")});
+  expect((await journal.once(request,operation)).state).toBe("unknown");
+  const receipt={state:"created" as const,inputId:"stable",address:{hostId:"100",harness:"codex" as const,nativeSessionId:"exact"},launchCwd:"/work",retryable:false};
+  expect(await journal.once(request,operation,async()=>receipt)).toEqual(receipt);
+  expect(await journal.once(request,operation)).toEqual(receipt);
+  expect(operation).toHaveBeenCalledTimes(1);
+ } finally {await rm(root,{recursive:true,force:true})}
+});
