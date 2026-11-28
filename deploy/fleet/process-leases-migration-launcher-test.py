@@ -108,6 +108,37 @@ class MigrationLauncherContracts(unittest.TestCase):
         self.assertEqual(json.loads(env["AGENT_HERDER_MIGRATION_NEW_AUTHORITIES"]), [["local", "new", "fresh"]])
         self.assertEqual(env["AGENT_HERDER_MIGRATION_EPOCH"], "reviewed-epoch")
 
+    def test_only_fresh_pinned_remote_codex_gets_a_new_authority_scope(self):
+        script = self.root / "remote-runner.js"
+        companion = Path(str(script) + ".json")
+        self.save(script, b"isolated wrapper")
+        self.save(companion, {"nodeRef": "remote", "kind": "codex"})
+        self.manifest["remote_ahap_wrappers"] = [{
+            "node": "remote", "instance": "new", "kind": "codex", "script": str(script),
+            "script_sha256": launcher.digest(script), "config_sha256": launcher.digest(companion),
+        }]
+        config = json.loads(self.config.read_bytes())
+        config["quarantine"] = {"snapshots": [
+            {"node_ref": "local", "instance_ref": "one", "authority_generation": "original"},
+        ]}
+        self.save(self.config, config)
+        self.bind()
+        owner = {"kind": "codex", "node": "remote", "instance": "new",
+                 "executable": self.manifest["node"], "ahap_script": str(script),
+                 "fresh_remote_codex_authority": True}
+        self.save(self.profile, {"generation": "fresh", "owner": owner})
+        _, env, _ = launcher.prepare(self.selector)
+        self.assertEqual(json.loads(env["AGENT_HERDER_MIGRATION_NEW_AUTHORITIES"]), [["remote", "new", "fresh"]])
+        self.assertEqual(env["AGENT_HERDER_MIGRATION_EPOCH"], "reviewed-epoch")
+        self.save(self.profile, {"generation": "original", "owner": owner})
+        _, env, _ = launcher.prepare(self.selector)
+        self.assertNotIn("AGENT_HERDER_MIGRATION_NEW_AUTHORITIES", env)
+        self.save(self.profile, {"generation": "fresh", "owner": {
+            **owner, "ahap_script": self.manifest["adapters"]["codex"],
+        }})
+        with self.assertRaisesRegex(ValueError, "requires a pinned wrapper"):
+            launcher.prepare(self.selector)
+
     def test_old_launcher_cannot_pass_candidate_preflight_with_new_migration(self):
         candidate_loader = importlib.machinery.SourceFileLoader(
             "migration_candidate", str(Path(__file__).with_name("process-leases-candidate.py")))

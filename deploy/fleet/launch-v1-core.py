@@ -185,14 +185,6 @@ def prepare(selector):
                     or adapter_env.get('AHAP_BROWSER_TRANSPORT') not in ('direct-cdp', 'herder-extension')
                     or owner.get('ahap_base_url') is not None):
                 raise ValueError('native browser profile requires a supported browser transport')
-            # This roster describes the authorities owned by the drained
-            # legacy writer. Browser accounts enrolled later have a separate
-            # authority and generation, including on the same node.
-            address = (owner.get('node'), owner.get('instance'))
-            generation = profile.get('generation')
-            if (migrated_scopes and all(isinstance(value, str) and value for value in (*address, generation))
-                    and address not in migrated_scopes and generation not in migrated_generations):
-                new_authorities.append([*address, generation])
         elif ahap_script is None:
             # Native OpenCode profiles select the endpoint directly. The Rust
             # owner composition validates the endpoint and owns the transport.
@@ -200,6 +192,18 @@ def prepare(selector):
                 raise ValueError('native profile has no supported endpoint binding')
         elif ahap_script != canonical and pinned.get(identity) != ahap_script:
             raise ValueError('profile does not select the installed artifact')
+        fresh_remote_codex = owner.get('fresh_remote_codex_authority', False)
+        if type(fresh_remote_codex) is not bool or (fresh_remote_codex and
+                (kind != 'codex' or ahap_script is None or pinned.get(identity) != ahap_script)):
+            raise ValueError('fresh remote Codex authority requires a pinned wrapper')
+        if native_browser or fresh_remote_codex:
+            # Authorities enrolled after the legacy writer drained have separate
+            # scopes and generations. Neither historical identity can be reused.
+            address = (owner.get('node'), owner.get('instance'))
+            generation = profile.get('generation')
+            if (migrated_scopes and all(isinstance(value, str) and value for value in (*address, generation))
+                    and address not in migrated_scopes and generation not in migrated_generations):
+                new_authorities.append([*address, generation])
         argv.extend(['--trusted-owner-profile', path])
     env = dict(os.environ)
     # An inherited process config cannot override a manifest with no such feature.

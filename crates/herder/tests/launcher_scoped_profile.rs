@@ -2219,16 +2219,19 @@ fn safe_vibe_env() -> serde_json::Value {
 }
 
 #[test]
-fn new_browser_authority_does_not_require_a_legacy_migration_snapshot() {
+fn fresh_authorities_do_not_require_a_legacy_migration_snapshot() {
     use herder::application::scoped_stop::migration_quarantine::digest;
     use serde_json::{Value, json};
     use std::io::{BufRead, BufReader, Write};
 
     let legacy = Fixture::new();
     let added = Fixture::new();
+    let remote_codex = Fixture::new();
     let binary = std::env::var_os("HERDER_V1_CANDIDATE_BINARY")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_herder_native_stdio")));
+    let browser_executable = legacy.root.join("herder-browser");
+    fs::copy(env!("CARGO_BIN_EXE_herder-browser"), &browser_executable).unwrap();
     let source = legacy.root.join("sealed-legacy-records.json");
     let source_hash = "a".repeat(64);
     let inventory = digest(format!("{}\0{}\n", source.display(), source_hash).as_bytes());
@@ -2251,7 +2254,7 @@ fn new_browser_authority_does_not_require_a_legacy_migration_snapshot() {
     for (fixture, instance) in [(&legacy, "zai-existing"), (&added, "zai-added")] {
         let profile = json!({"database":fixture.db,"gate":fixture.gate,"generation":"generation","owner":{
             "kind":"zai","node":"node","instance":instance,"principal":"owner",
-            "executable":binary,"cwd":fixture.root,"code_home":fixture.root,
+            "executable":browser_executable,"cwd":fixture.root,"code_home":fixture.root,
             "ahap_env":{"AHAP_BROWSER_TRANSPORT":"direct-cdp",
                 "AHAP_BROWSER_CDP_WS_URL":"ws://127.0.0.1:9222/devtools/browser/migration-fixture",
                 "AHAP_BROWSER_CDP_CONTEXT_ID":"fixture-context",
@@ -2260,11 +2263,27 @@ fn new_browser_authority_does_not_require_a_legacy_migration_snapshot() {
         }});
         fs::write(&fixture.profile, profile.to_string()).unwrap();
     }
+    remote_codex.migrate_v4();
+    let wrapper = remote_codex.root.join("remote-codex.py");
+    fs::write(&wrapper, "# Profile fixture, never invoked by wait_status").unwrap();
+    fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o700)).unwrap();
+    let profile = json!({
+        "database": remote_codex.db, "gate": remote_codex.gate, "generation": "generation",
+        "owner": {
+            "kind": "codex", "node": "node", "instance": "codex-added", "principal": "owner",
+            "fresh_remote_codex_authority": true,
+            "executable": fs::canonicalize("/usr/bin/python3").unwrap(), "ahap_script": wrapper,
+            "cwd": remote_codex.root, "code_home": remote_codex.root
+        }
+    });
+    fs::write(&remote_codex.profile, profile.to_string()).unwrap();
+
     let mut child = Command::new(&binary)
         .arg("--trusted-owner-profile").arg(&legacy.profile)
         .arg("--trusted-owner-profile").arg(&added.profile)
+        .arg("--trusted-owner-profile").arg(&remote_codex.profile)
         .env("AGENT_HERDER_MIGRATION_EPOCH","migration-fixture")
-        .env("AGENT_HERDER_MIGRATION_NEW_AUTHORITIES",r#"[["node","zai-added","generation"]]"#)
+        .env("AGENT_HERDER_MIGRATION_NEW_AUTHORITIES",r#"[["node","zai-added","generation"],["node","codex-added","generation"]]"#)
         .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
     let mut input = child.stdin.take().unwrap();
     let mut output = BufReader::new(child.stdout.take().unwrap());

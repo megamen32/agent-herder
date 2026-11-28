@@ -1086,6 +1086,7 @@ def remote_codex_registration_plan(base, selection, bundle, binding_pin):
         raise ValueError("remote Codex registration requires one existing principal")
     profile["owner"] = {"principal": principals.pop(), "node": wrapper["node"],
                         "instance": wrapper["instance"], "kind": "codex",
+                        "fresh_remote_codex_authority": True,
                         "executable": base["node"], "ahap_script": str(script),
                         "cwd": str(directory.parent), "code_home": str(directory.parent), "ahap_env": {}}
     payload = encoded(profile)
