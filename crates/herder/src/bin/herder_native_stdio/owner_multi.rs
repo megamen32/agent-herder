@@ -25,6 +25,9 @@ fn canonical_host_id(value: &str) -> &str {
     }
 }
 impl MultiOwner {
+    fn primary(&self) -> &BoundOwner {
+        self.bindings.iter().find(|binding| binding.adapter_available).unwrap_or(&self.bindings[0])
+    }
     fn by_instance(&self, instance: &str) -> Result<&BoundOwner, ErrorData> {
         self.bindings.iter().find(|binding| binding.instance.instance_id == instance).ok_or_else(unavailable)
     }
@@ -46,6 +49,11 @@ impl MultiOwner {
         request: CallToolRequestParams,
         ctx: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
+        // An offline owner still owns its native namespace. A bare native ID
+        // cannot be selected by excluding an unavailable candidate.
+        if self.bindings.iter().any(|binding| !binding.adapter_available) {
+            return Ok(denied("owner_adapter_unavailable"));
+        }
         // A native ID is scoped to one owner profile. Probe only read paths;
         // every owner still applies its own exact ACL and authority checks.
         let mut winner = None;
@@ -71,12 +79,12 @@ impl MultiOwner {
     }
 }
 impl ServerHandler for MultiOwner {
-    fn get_info(&self) -> ServerConfig { self.bindings[0].server.get_info() }
+    fn get_info(&self) -> ServerConfig { self.primary().server.get_info() }
     fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
-        self.bindings[0].server.supported_protocol_versions()
+        self.primary().server.supported_protocol_versions()
     }
     async fn list_tools(&self, request: Option<PaginatedRequestParams>, ctx: RequestContext<RoleServer>) -> Result<ListToolsResult, ErrorData> {
-        self.bindings[0].server.list_tools(request, ctx).await
+        self.primary().server.list_tools(request, ctx).await
     }
     async fn call_tool(&self, request: CallToolRequestParams, ctx: RequestContext<RoleServer>) -> Result<CallToolResponse, ErrorData> {
         let args = request.arguments.as_ref();
@@ -129,7 +137,7 @@ impl ServerHandler for MultiOwner {
         }
         if request.name.as_ref()=="session" && args.and_then(|a|a.get("action")).and_then(Value::as_str)==Some("resolve"){
             // The shared registry resolves exact canonical metadata with fresh ACLs.
-            return self.bindings[0].server.call_tool(request,ctx).await;
+            return self.primary().server.call_tool(request,ctx).await;
         }
         if let Some(instance) = args.and_then(|a| a.get("instance_ref")).and_then(Value::as_str) {
             let Ok(binding) = self.by_instance(instance) else { return Ok(denied("invalid_instance")); };
@@ -222,15 +230,15 @@ impl ServerHandler for MultiOwner {
         if request.name.as_ref()=="resource" {
             if args.and_then(|a|a.get("action")).and_then(Value::as_str)==Some("bind") {
                 let Some(execution)=args.and_then(|a|a.get("execution_ref")).and_then(Value::as_str) else{return Ok(denied("execution_ref_required"))};
-                let Some(process)=&self.bindings[0].process else{return Ok(denied("process_runtime_not_configured"))};
-                let Some(session)=process.execution_session(&self.bindings[0].policy.principal.0,execution)
+                let Some(process)=&self.primary().process else{return Ok(denied("process_runtime_not_configured"))};
+                let Some(session)=process.execution_session(&self.primary().policy.principal.0,execution)
                     .map_err(|_|unavailable())? else{return Ok(denied("execution_unavailable"))};
                 let Ok(binding)=self.by_session(&session) else{return Ok(denied("session_unavailable"))};
                 return binding.server.call_tool(request,ctx).await;
             }
             // All configured owners share one launcher-pinned resource authority
             // and one authenticated principal (validated by serve).
-            return self.bindings[0].server.call_tool(request,ctx).await;
+            return self.primary().server.call_tool(request,ctx).await;
         }
         // A completion callback routes only through its exact registered child.
         // The selected authority verifies the rule's parent/child binding.
@@ -269,7 +277,14 @@ impl ServerHandler for MultiOwner {
             if node.is_some_and(|node| node != binding.instance.node.0) { continue; }
             let result = binding.server.call_tool(request.clone(), ctx.clone()).await?;
             let CallToolResponse::Complete(result) = result else { return Err(unavailable()); };
-            if result.is_error == Some(true) { return Ok(result.into()); }
+            if result.is_error == Some(true) {
+                if !binding.adapter_available {
+                    complete = false;
+                    sources.push(json!({"instance_ref":binding.instance.instance_id,"error":result.structured_content}));
+                    continue;
+                }
+                return Ok(result.into());
+            }
             let Some(data) = result.structured_content else { return Err(unavailable()); };
             let Some(items) = data.get(field).and_then(Value::as_array) else { return Err(unavailable()); };
             for item in items { if !rows.contains(item) { rows.push(item.clone()); } }
@@ -318,16 +333,28 @@ pub async fn serve(profiles: Vec<OpenedOwner>) -> Result<(), Box<dyn std::error:
         }
     }
     let registry=Arc::new(herder::application::scoped_stop::wait_automation::DependencyRegistry::new());
-    let mut bindings = Vec::with_capacity(profiles.len());
-    for profile in profiles {
-        let binding = if profile.owner.has_native_codex_binding() {
-            owner_launch::build_with_registry(profile, registry.clone())?
-        } else if owner_launch::has_native_opencode_binding(&profile.owner) {
-            owner_native_opencode::build(profile, registry.clone()).await?
-        } else {
-            owner_opencode::build_with_registry(profile, registry.clone())?
-        };
-        bindings.push(binding);
+    // Independent owner handshakes share wall-clock startup time. Keep the
+    // MCP runtime free to drive async native owners while AHAP waits on pipes.
+    let runtime = tokio::runtime::Handle::current();
+    let pending = profiles.into_iter().map(|profile| {
+        let registry = registry.clone();
+        let runtime = runtime.clone();
+        tokio::task::spawn_blocking(move || {
+            let result = if profile.owner.has_native_codex_binding() {
+                owner_launch::build_with_registry(profile, registry)
+            } else if owner_launch::has_native_opencode_binding(&profile.owner) {
+                runtime.block_on(owner_native_opencode::build(profile, registry))
+            } else {
+                owner_opencode::build_with_registry(profile, registry)
+            };
+            result.map_err(|error| error.to_string())
+        })
+    }).collect::<Vec<_>>();
+    // Join every startup before propagating a static configuration failure.
+    let results = futures_util::future::join_all(pending).await;
+    let mut bindings = Vec::with_capacity(results.len());
+    for result in results {
+        bindings.push(result??);
     }
     registry.configure(bindings.iter().map(|b|b.source.clone()).collect())?;
     herder::application::scoped_stop::automation_driver::start(bindings.iter().map(BoundOwner::driver_owner).collect())?;
