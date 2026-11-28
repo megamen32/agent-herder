@@ -58,9 +58,11 @@ struct State {
     rx: Receiver<Result<Value, FrameError>>,
     next_id: u64,
     usable: bool,
+    transport_closed: bool,
     init_pending: bool,
 }
 pub struct AhapClient {
+    config: AhapConfig,
     instance_id: String,
     harness: String,
     methods: HashSet<String>,
@@ -246,7 +248,8 @@ fn rpc(
     }
     match ack_rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
         Ok(Ok(())) => (),
-        _ => {
+        failure => {
+            s.transport_closed = matches!(failure, Ok(Err(())) | Err(RecvTimeoutError::Disconnected));
             s.poison();
             return Err(AhapError::OutcomeUnknown);
         }
@@ -261,10 +264,12 @@ fn rpc(
             Ok(Ok(v)) => v,
             Ok(Err(FrameError::Protocol)) => return Err(protocol_failure(s, method)),
             Ok(Err(FrameError::Io)) => {
+                s.transport_closed = true;
                 s.poison();
                 return Err(AhapError::OutcomeUnknown);
             }
-            Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => {
+            Err(error) => {
+                s.transport_closed = error == RecvTimeoutError::Disconnected;
                 s.poison();
                 return Err(AhapError::OutcomeUnknown);
             }
@@ -382,6 +387,7 @@ impl AhapClient {
             rx,
             next_id: 1,
             usable: true,
+            transport_closed: false,
             init_pending: false,
         };
         let init = rpc(
@@ -427,6 +433,7 @@ impl AhapClient {
         }
         state.init_pending = lazy_init && methods.contains("init");
         Ok(Self {
+            config: config.clone(),
             instance_id: config.instance_id,
             harness: config.harness,
             methods,
@@ -473,7 +480,17 @@ impl AhapClient {
         let mut lease = self.checkout(deadline)?;
         let s = lease.state.as_mut().expect("checked out AHAP state");
         if !s.usable {
-            return Err(AhapError::Unavailable);
+            if !s.transport_closed || method != "getSessionMessages" {
+                return Err(AhapError::Unavailable);
+            }
+            let replacement = Self::open_bounded_startup(
+                self.config.clone(), false, deadline.saturating_duration_since(Instant::now()),
+            )?;
+            if replacement.capabilities != self.capabilities {
+                return Err(AhapError::Protocol);
+            }
+            *s = replacement.state.into_inner().map_err(|_| AhapError::Unavailable)?
+                .ok_or(AhapError::Unavailable)?;
         }
         if s.init_pending {
             let result = rpc(s, "init", json!({}), deadline.saturating_duration_since(Instant::now()), &self.harness);
@@ -549,6 +566,31 @@ for line in sys.stdin:
  else:v=[]
  print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
 "##;
+    #[test]
+    fn history_read_recovers_after_idle_runner_exits() {
+        let script = format!("{SCRIPT} if m=='getSessionMessages': sys.exit(0)\n");
+        let (_fixture, client) = fixture(&script, Duration::from_secs(2));
+        assert!(client.call("getSessionMessages", json!({})).is_ok());
+        let lease = client.checkout(Instant::now() + Duration::from_secs(2)).unwrap();
+        // EOF proves the child closed stdout after its last complete reply.
+        assert!(matches!(lease.state.as_ref().unwrap().rx.recv_timeout(Duration::from_secs(2)),
+                         Err(RecvTimeoutError::Disconnected)));
+        drop(lease);
+        assert!(client.call("getSessionMessages", json!({})).is_err());
+        assert_eq!(client.call("getSessionMessages", json!({})).unwrap(), json!([]));
+    }
+
+    #[test]
+    fn history_read_after_transport_exit_does_not_replay_send() {
+        let script = SCRIPT.replace("time.sleep(1);v=", "sys.exit(0);v=");
+        let (f, client) = fixture(&script, Duration::from_secs(2));
+        assert!(client.call("getSessionMessages", json!({})).is_ok());
+        assert!(client.call("sendMessage", json!({})).is_err());
+        assert_eq!(client.call("getSessionMessages", json!({})).unwrap(), json!([]));
+        let trace = fs::read_to_string(f.0.join("trace")).unwrap();
+        assert_eq!(trace.lines().filter(|m| *m == "sendMessage").count(), 1);
+    }
+
     #[test]
     fn capabilities_and_instance_are_explicit() {
         let (f, c) = fixture(SCRIPT, Duration::from_secs(2));
