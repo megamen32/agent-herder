@@ -373,7 +373,7 @@ class RetainedOwnerContracts(unittest.TestCase):
         self.assert_authority_unchanged()
 
 
-    def native_build(self):
+    def native_build(self, *, restore=True):
         # A real clean Git worktree and the official CLI exercise candidate
         # composition; the isolated cargo stub only emits inert fixture files.
         repo = self.root / "build-repo"
@@ -407,7 +407,7 @@ for name in ('herder_native_stdio','herder_process_worker'):
             "--build-dir", str(self.root / "cargo-target"), "--cargo", str(cargo),
             "--execution-root", self.config["execution_root"], "--resource-root", self.config["resources"]["root"],
             "--node-ref", self.config["node_ref"], "--storage-id", self.config["resources"]["storage_id"],
-            "--restore-retained-owner", *self.args.retained_selector, *self.args.profile,
+            *(["--restore-retained-owner", *self.args.retained_selector, *self.args.profile] if restore else []),
         ], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout), source
@@ -497,6 +497,39 @@ for name in ('herder_native_stdio','herder_process_worker'):
         selected.write_bytes(candidate.encoded(value))
         self.assert_rejected_without_switch(self.stage_direct, "selected browser account")
         self.assertFalse(self.output.exists())
+
+
+    def test_installed_restore_allows_database_evolution_and_next_native_build(self):
+        restored = self.stage()
+        self.install(restored)
+        installed_profiles = candidate.read_json(self.selector)["profiles"]
+        db = sqlite3.connect(self.retained_db)
+        try:
+            self.assertEqual(db.execute("PRAGMA journal_mode=WAL").fetchone()[0], "wal")
+            db.execute("INSERT INTO intents VALUES ('later-normal-request','confirmed')")
+            db.commit()
+            self.assertTrue(Path(str(self.retained_db) + "-wal").exists())
+            self.assertTrue(Path(str(self.retained_db) + "-shm").exists())
+            evolved_database = self.retained_db.read_bytes()
+            self.assertNotEqual(evolved_database, self.before_db)
+            self.assertEqual(candidate.check_selector(self.selector, self.launcher)["profiles_count"], 8)
+            result, _ = self.native_build(restore=False)
+            proposed = candidate.read_json(result["selector"])
+            manifest = candidate.read_json(proposed["manifest"])
+            self.assertNotIn("native_profile_migration", manifest)
+            self.assertEqual(proposed["profiles"], installed_profiles)
+            candidate.install(argparse.Namespace(
+                candidate=Path(result["selector"]), selector=self.selector, launcher=self.launcher,
+                backup=self.root / "next-native-backup", expected_selector_sha256=candidate.digest(self.selector)),
+                guard=self.guard)
+            self.assertEqual(candidate.read_json(self.selector)["profiles"], installed_profiles)
+            self.assertEqual(self.retained.read_bytes(), self.before_retained)
+            self.assertEqual(self.retained_db.read_bytes(), evolved_database)
+            self.assertEqual(db.execute("SELECT count(*) FROM intents WHERE request_key='later-normal-request'").fetchone()[0], 1)
+            self.assertEqual(db.execute("SELECT value_json FROM settings").fetchone()[0], self.snapshot.read_text())
+            self.assertTrue(Path(str(self.retained_db) + "-wal").exists())
+        finally:
+            db.close()
 
 
 
