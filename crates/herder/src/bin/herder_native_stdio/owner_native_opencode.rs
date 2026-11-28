@@ -654,6 +654,7 @@ pub async fn build(
         .with_create_policy(policy.clone())
         .with_reconciler(reconciler);
     Ok(BoundOwner {
+        adapter_available: true,
         autopilot: None,
         harness: "opencode".into(),
         session_recovery,

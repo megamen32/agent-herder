@@ -6,7 +6,7 @@ use super::{
 };
 use herder::{
     adapters::{
-        ahap::{AhapClient, AhapConfig},
+        ahap::{AhapClient, AhapConfig, AhapError},
         ahap_opencode::{AhapOpenCode, AhapPortPolicy},
     },
     application::scoped_stop::{
@@ -416,6 +416,7 @@ impl ApplicationPort for App {
     }
 }
 pub struct BoundOwner {
+    pub adapter_available: bool,
     pub autopilot: Option<Arc<herder::application::scoped_stop::session_autopilot::SessionAutopilot>>,
     pub harness: String,
     pub session_recovery: Option<Arc<dyn AutomationTick>>,
@@ -493,12 +494,18 @@ pub(super) fn open_adapter(
             20
         }),
     };
-    let client = if matches!(harness.as_str(), "chatgpt" | "zai") {
-        AhapClient::open_lazy_init(config)
-    } else {
-        AhapClient::open(config)
-    }
-    .map_err(|error| format!("AHAP {harness} startup failed: {error:?}. Verify the configured runner, native app-server arguments and provider configuration in owner.code_home/ahap_env; browser init requires the exact pinned account verifier. No create/send request was submitted by the core."))?;
+    let client = AhapClient::open_bounded_startup(
+        config,
+        matches!(harness.as_str(), "chatgpt" | "zai"),
+        Duration::from_secs(15),
+    ).map_err(|error| -> Box<dyn std::error::Error> {
+        if matches!(&error, AhapError::Initialization { cause, .. }
+            if matches!(cause.as_ref(), AhapError::OutcomeUnknown | AhapError::BeforeSend | AhapError::Unavailable))
+        {
+            return Box::new(super::owner_unavailable::AdapterStartupUnavailable);
+        }
+        format!("AHAP {harness} startup failed: {error:?}. Verify the configured runner, native app-server arguments and provider configuration in owner.code_home/ahap_env; browser init requires the exact pinned account verifier. No create/send request was submitted by the core.").into()
+    })?;
     let delivery_mode = if harness == "opencode"
         && client
             .capabilities()
@@ -560,7 +567,13 @@ pub fn build_with_registry(
         instance_id: opened.owner.instance.clone(),
     };
     let harness = opened.owner.kind.clone();
-    let (adapter, delivery_mode) = open_adapter(&opened.owner, &instance)?;
+    let (adapter, delivery_mode) = match open_adapter(&opened.owner, &instance) {
+        Ok(adapter) => adapter,
+        Err(error) if error.is::<super::owner_unavailable::AdapterStartupUnavailable>() => {
+            return super::owner_unavailable::build(opened, registry);
+        }
+        Err(error) => return Err(error),
+    };
     let recovery = opened.owner.browser_recovery;
     if recovery.is_some() && !adapter.guarded_recovery_supported() {
         return Err("browser recovery requires the guarded native send capability".into());
@@ -753,6 +766,7 @@ pub fn build_with_registry(
         .with_create_policy(policy.clone())
         .with_reconciler(reconciler);
     Ok(BoundOwner {
+        adapter_available: true,
         autopilot: None,
         session_recovery,
         server,
@@ -768,6 +782,9 @@ pub fn build_with_registry(
 
 impl BoundOwner {
     pub fn driver_owner(&self) -> AutomationOwner {
+        if !self.adapter_available {
+            return AutomationOwner::new(self.identity.clone(), vec![]);
+        }
         let mut modules: Vec<Arc<dyn AutomationTick>> = Vec::new();
         if let Some(process) = &self.process {
             modules.push(process.clone());

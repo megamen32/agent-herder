@@ -45,10 +45,17 @@ pub struct AhapConfig {
     pub env: Vec<(String, String)>,
     pub timeout: Duration,
 }
+#[derive(Debug)]
+enum FrameError {
+    Io,
+    Protocol,
+}
 struct State {
     child: Child,
+    #[cfg(unix)]
+    process_group: Option<i32>,
     writer: mpsc::SyncSender<(Vec<u8>, mpsc::SyncSender<Result<(), ()>>)>,
-    rx: Receiver<Result<Value, ()>>,
+    rx: Receiver<Result<Value, FrameError>>,
     next_id: u64,
     usable: bool,
     init_pending: bool,
@@ -89,24 +96,36 @@ impl State {
     /// UNKNOWN even after the runner exits.
     fn poison(&mut self) {
         self.usable = false;
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        #[cfg(unix)]
+        {
+            if let Some(group) = self.process_group.take() {
+                // The unreaped leader reserves this PID/PGID until cleanup.
+                // Only descendants of this newly spawned adapter are signalled.
+                unsafe { libc::kill(-group, libc::SIGKILL); }
+                let _ = self.child.kill();
+                let _ = self.child.wait();
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
     }
 }
 impl Drop for State {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        self.poison();
     }
 }
-fn frames(out: impl Read, tx: mpsc::SyncSender<Result<Value, ()>>) {
+fn frames(out: impl Read, tx: mpsc::SyncSender<Result<Value, FrameError>>) {
     let mut r = BufReader::new(out);
     loop {
         let mut line = Vec::new();
         let n = match (&mut r).take(MAX_FRAME + 1).read_until(b'\n', &mut line) {
             Ok(n) => n,
             Err(_) => {
-                let _ = tx.send(Err(()));
+                let _ = tx.send(Err(FrameError::Io));
                 return;
             }
         };
@@ -114,10 +133,10 @@ fn frames(out: impl Read, tx: mpsc::SyncSender<Result<Value, ()>>) {
             return;
         }
         if n as u64 > MAX_FRAME || line.last() != Some(&b'\n') {
-            let _ = tx.send(Err(()));
+            let _ = tx.send(Err(FrameError::Protocol));
             return;
         }
-        let parsed = serde_json::from_slice::<Value>(&line).map_err(|_| ());
+        let parsed = serde_json::from_slice::<Value>(&line).map_err(|_| FrameError::Protocol);
         if tx.send(parsed).is_err() {
             return;
         }
@@ -182,6 +201,16 @@ fn browser_send_unconfirmed(harness: &str, method: &str, error: &Value) -> Optio
     browser_send_diagnostic(data).filter(|d| d.belongs_to(harness))
 }
 
+fn protocol_failure(s: &mut State, method: &str) -> AhapError {
+    s.poison();
+    if matches!(method, "initialize" | "init") {
+        AhapError::Protocol
+    } else {
+        // A malformed reply never proves that a submitted mutation was absent.
+        AhapError::OutcomeUnknown
+    }
+}
+
 fn rpc(
     s: &mut State,
     method: &str,
@@ -196,13 +225,8 @@ fn rpc(
     if !s.usable {
         return Err(AhapError::Unavailable);
     }
-    match s.child.try_wait() {
-        Ok(None) => (),
-        _ => {
-            s.usable = false;
-            return Err(AhapError::BeforeSend);
-        }
-    }
+    // Pipe acknowledgement/EOF detects an exited runner. Do not reap it before
+    // owned-group cleanup: its reserved PID prevents signalling a reused group.
     let id = s.next_id;
     s.next_id = s.next_id.checked_add(1).ok_or(AhapError::BeforeSend)?;
     let mut data =
@@ -235,7 +259,8 @@ fn rpc(
         }
         let frame = match s.rx.recv_timeout(remaining) {
             Ok(Ok(v)) => v,
-            Ok(Err(_)) => {
+            Ok(Err(FrameError::Protocol)) => return Err(protocol_failure(s, method)),
+            Ok(Err(FrameError::Io)) => {
                 s.poison();
                 return Err(AhapError::OutcomeUnknown);
             }
@@ -245,26 +270,22 @@ fn rpc(
             }
         };
         if frame.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
-            s.poison();
-            return Err(AhapError::OutcomeUnknown);
+            return Err(protocol_failure(s, method));
         }
         if frame.get("id").is_none() && frame.get("method").and_then(Value::as_str) == Some("event")
         {
             continue;
         }
         if frame.get("id").and_then(Value::as_u64) != Some(id) {
-            s.poison();
-            return Err(AhapError::OutcomeUnknown);
+            return Err(protocol_failure(s, method));
         }
         let Some(object) = frame.as_object() else {
-            s.poison();
-            return Err(AhapError::OutcomeUnknown);
+            return Err(protocol_failure(s, method));
         };
         let has_result = object.contains_key("result");
         let has_error = object.contains_key("error");
         if has_result == has_error {
-            s.poison();
-            return Err(AhapError::OutcomeUnknown);
+            return Err(protocol_failure(s, method));
         }
         if has_error {
             let valid = object
@@ -275,8 +296,7 @@ fn rpc(
                         && e.get("message").and_then(Value::as_str).is_some()
                 });
             if !valid {
-                s.poison();
-                return Err(AhapError::OutcomeUnknown);
+                return Err(protocol_failure(s, method));
             }
             return Err(
                 if object.len() == 3
@@ -295,14 +315,30 @@ fn rpc(
 }
 impl AhapClient {
     pub fn open(config: AhapConfig) -> Result<Self, AhapError> {
-        Self::open_inner(config, false)
+        Self::open_inner(config, false, None)
     }
     /// Verify AHAP metadata immediately, but defer account initialization to
     /// the first supported operation. Intended for browser owner composition.
     pub fn open_lazy_init(config: AhapConfig) -> Result<Self, AhapError> {
-        Self::open_inner(config, true)
+        Self::open_inner(config, true, None)
     }
-    fn open_inner(config: AhapConfig, lazy_init: bool) -> Result<Self, AhapError> {
+    /// Bound startup independently of normal RPCs. Lazy account initialization
+    /// remains part of the first operation's ordinary timeout.
+    pub fn open_bounded_startup(
+        config: AhapConfig,
+        lazy_init: bool,
+        startup_timeout: Duration,
+    ) -> Result<Self, AhapError> {
+        if startup_timeout.is_zero() {
+            return Err(AhapError::InvalidConfig);
+        }
+        Self::open_inner(config, lazy_init, Some(startup_timeout))
+    }
+    fn open_inner(
+        config: AhapConfig,
+        lazy_init: bool,
+        startup_timeout: Option<Duration>,
+    ) -> Result<Self, AhapError> {
         if config.instance_id.is_empty()
             || config.harness.is_empty()
             || !config.executable.is_absolute()
@@ -311,7 +347,7 @@ impl AhapClient {
         {
             return Err(AhapError::InvalidConfig);
         }
-        let deadline = Instant::now() + config.timeout;
+        let deadline = Instant::now() + startup_timeout.unwrap_or(config.timeout).min(config.timeout);
         let mut cmd = Command::new(&config.executable);
         cmd.args(&config.args)
             .current_dir(&config.cwd)
@@ -323,6 +359,11 @@ impl AhapClient {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd.process_group(0);
+        }
         let mut child = cmd.spawn().map_err(|e| {
             eprintln!("AHAP runner process could not start: {e}");
             AhapError::BeforeSend
@@ -334,6 +375,8 @@ impl AhapClient {
         let (writer, write_rx) = mpsc::sync_channel(1);
         thread::spawn(move || writes(input, write_rx));
         let mut state = State {
+            #[cfg(unix)]
+            process_group: Some(i32::try_from(child.id()).map_err(|_| AhapError::BeforeSend)?),
             child,
             writer,
             rx,

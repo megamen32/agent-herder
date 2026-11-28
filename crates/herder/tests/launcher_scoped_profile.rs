@@ -1880,6 +1880,7 @@ for line in sys.stdin:
   if os.path.exists(os.path.join(home,'hang')):
    open(os.path.join(home,'entered'),'w').close()
    while not os.path.exists(os.path.join(home,'release')):time.sleep(.01)
+   open(os.path.join(home,'released'),'w').close()
   v=[{'id':'fixture-session','harness':'chatgpt','status':'idle','cwd':home}]
  else:raise Exception(m)
  print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
@@ -1943,6 +1944,10 @@ try:
  reply=receive(time.monotonic()+22)
  assert reply['id']==1 and reply['result']['isError'] and reply['result']['structuredContent']['code']=='owner_read_timeout',reply
  open(os.path.join(os.path.dirname(sys.argv[2]),'release'),'w').close()
+ deadline=time.monotonic()+2
+ while not os.path.exists(os.path.join(os.path.dirname(sys.argv[2]),'released')):
+  assert time.monotonic()<deadline,'fixture adapter did not leave blocked RPC'
+  time.sleep(.01)
  send(4,'tools/call',{'name':'discover','arguments':{'action':'instances'}})
  reply=receive(time.monotonic()+2);assert reply['id']==4 and len(reply['result']['structuredContent']['instances'])==2,reply
 finally:
@@ -1952,6 +1957,140 @@ finally:
     let result = Command::new("/usr/bin/python3").arg(driver).arg(binary)
         .arg(&hung.profile).arg(&healthy.profile).arg(mode).output().unwrap();
     assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+}
+
+
+#[test]
+fn unavailable_ahap_startup_does_not_block_compat_or_other_instances() {
+    ahap_startup_isolation_probe(None);
+}
+
+#[test]
+fn mismatched_ahap_startup_is_not_treated_as_transport_unavailability() {
+    ahap_startup_isolation_probe(Some("mismatch"));
+}
+
+#[test]
+fn invalid_ahap_startup_frame_is_not_treated_as_transport_unavailability() {
+    ahap_startup_isolation_probe(Some("protocol"));
+}
+
+fn ahap_startup_isolation_probe(failure: Option<&str>) {
+    let fixtures = [Fixture::new(), Fixture::new(), Fixture::new()];
+    for (i, f) in fixtures.iter().enumerate() {
+        f.migrate_v4();
+        fs::write(f.root.join("startup-mode"), if let Some(mode) = failure.filter(|_| i == 0) {
+            mode
+        } else if i < 2 {
+            "hang"
+        } else {
+            "ready"
+        }).unwrap();
+        let adapter = f.root.join("startup-adapter.py");
+        fs::write(&adapter, r#"import json,os,subprocess,sys,time
+home=os.environ['HOME'];mode=open(os.path.join(home,'startup-mode')).read()
+for line in sys.stdin:
+ r=json.loads(line);m=r['method']
+ with open(os.path.join(home,'trace'),'a') as out:out.write(m+'\n')
+ if m=='initialize':
+  if mode=='hang':
+   child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(600)'])
+   open(os.path.join(home,'child-pid'),'w').write(str(child.pid))
+   while True:time.sleep(1)
+  if mode=='ready':time.sleep(13.5)
+  v={'harness':'opencode' if mode=='mismatch' else 'codex','capabilities':{'methods':['init','listSessions','getSession','getSessionMessages','sendMessage','createSession'],'deliveryModes':['queue']}}
+ elif m=='init':v=None
+ elif m=='getSession':v={'id':r['params']['id'],'harness':'codex','status':'idle','cwd':home}
+ elif m=='listSessions':v=[]
+ elif m=='getSessionMessages':v=[]
+ else:raise Exception(m)
+ print(json.dumps({'jsonrpc':'1.0' if mode=='protocol' else '2.0','id':r['id'],'result':v}),flush=True)
+"#).unwrap();
+        fs::set_permissions(&adapter, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::write(&f.profile, serde_json::json!({"database":f.db,"gate":f.gate,"generation":"generation","owner":{
+            "kind":"codex","principal":"owner","node":"node","instance":format!("startup-{i}"),
+            "executable":fs::canonicalize("/usr/bin/python3").unwrap(),"ahap_script":adapter,
+            "code_home":f.root,"cwd":f.root}}).to_string()).unwrap();
+    }
+    let driver = fixtures[0].root.join("probe-startup.py");
+    fs::write(&driver, r#"import json,os,select,signal,sqlite3,subprocess,sys,time
+compat=os.environ.get('HERDER_V1_COMPAT_BINARY')
+env=os.environ.copy();env['HERDER_NATIVE_COMMAND']=sys.argv[1]
+args=[compat or sys.argv[1]]
+for profile in sys.argv[3:]:args+=['--trusted-owner-profile',profile]
+p=subprocess.Popen(args,env=env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True)
+pending=b'';seq=0
+meta={'io.modelcontextprotocol/protocolVersion':'2026-07-28','io.modelcontextprotocol/clientCapabilities':{},'io.modelcontextprotocol/clientInfo':{'name':'startup-fixture','version':'1'}}
+def call(method,params,timeout=2):
+ global seq,pending
+ seq+=1
+ if not compat:params['_meta']=meta
+ p.stdin.write((json.dumps({'jsonrpc':'2.0','id':seq,'method':method,'params':params})+'\n').encode());p.stdin.flush()
+ deadline=time.monotonic()+timeout
+ while b'\n' not in pending:
+  assert select.select([p.stdout],[],[],max(0,deadline-time.monotonic()))[0], 'unavailable owner blocked MCP startup'
+  chunk=os.read(p.stdout.fileno(),65536);assert chunk,'core exited before reply: '+p.stderr.read().decode()
+  pending+=chunk
+ line,pending=pending.split(b'\n',1)
+ reply=json.loads(line);assert reply['id']==seq and 'result' in reply,reply
+ return reply['result']
+try:
+ if sys.argv[2]!='hang':
+  assert p.wait(timeout=17)!=0,'mismatched harness was accepted'
+  assert p.stdout.read()==b'','unverified owner reached MCP service'
+  sys.exit(0)
+ started=time.monotonic()
+ if compat:
+  call('initialize',{'protocolVersion':'2025-06-18','capabilities':{},'clientInfo':{'name':'startup-fixture','version':'1'}},timeout=17)
+  p.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n');p.stdin.flush()
+ else:call('server/discover',{},timeout=17)
+ assert time.monotonic()-started<17,'startup budgets accumulated across owners'
+ for profile in sys.argv[3:5]:
+  pid=int(open(os.path.join(os.path.dirname(profile),'child-pid')).read())
+  deadline=time.monotonic()+1
+  while os.path.exists('/proc/'+str(pid)+'/stat'):
+   state=open('/proc/'+str(pid)+'/stat').read().split()[2]
+   if state=='Z':break
+   assert time.monotonic()<deadline,'timed out adapter left its spawned child alive'
+   time.sleep(.01)
+ result=call('tools/call',{'name':'discover','arguments':{'action':'nodes'}})
+ assert result['structuredContent']['nodes']==[{'node_ref':'node'}],result
+ result=call('tools/call',{'name':'discover','arguments':{'action':'instances'}})
+ rows=result['structuredContent']['instances'];assert len(rows)==3,rows
+ for i in range(2):
+  row=next(row for row in rows if row['instance_ref']=='startup-'+str(i))
+  assert row['availability']=='unavailable' and 'capabilities' not in row,row
+ result=call('tools/call',{'name':'session','arguments':{'action':'register','instance_ref':'startup-2','native_session_id':'fixture-session','request_key':'healthy-register'}})
+ assert not result.get('isError'),result
+ result=call('tools/call',{'name':'sessions','arguments':{'action':'list','instance_ref':'startup-2','node_ref':'node'}})
+ assert not result.get('isError') and len(result['structuredContent']['sessions'])==1,result
+ result=call('tools/call',{'name':'sessions','arguments':{'action':'list'}})
+ data=result['structuredContent']
+ assert not result.get('isError') and len(data['sessions'])==1 and data['complete']==False,data
+ assert sum('error' in source for source in data['sources'])==2,data
+ result=call('tools/call',{'name':'session','arguments':{'action':'resolve','harness':'codex','native_session_id':'fixture-session','node_ref':'node'}})
+ assert not result.get('isError') and result['structuredContent']['owner']['instance_ref']=='startup-2',result
+ result=call('tools/call',{'name':'create','arguments':{'action':'create','instance_ref':'startup-0','prompt':'must not be sent','request_key':'offline-once'}})
+ assert result['isError'] and result['structuredContent']['code']=='owner_adapter_unavailable' and result['structuredContent']['effect']=='none',result
+ with sqlite3.connect(json.load(open(sys.argv[3]))['database']) as db:
+  assert db.execute('SELECT count(*) FROM intents').fetchone()[0]==0,'offline owner admitted an intent'
+ result=call('tools/call',{'name':'discover','arguments':{'action':'instances'}})
+ assert len(result['structuredContent']['instances'])==3,result
+finally:
+ try:os.killpg(p.pid,signal.SIGKILL)
+ except ProcessLookupError:pass
+ p.wait(timeout=5)
+"#).unwrap();
+    let binary = std::env::var_os("HERDER_V1_CANDIDATE_BINARY").unwrap_or_else(|| env!("CARGO_BIN_EXE_herder_native_stdio").into());
+    let result = Command::new("/usr/bin/python3").arg(driver).arg(binary)
+        .arg(failure.unwrap_or("hang"))
+        .args(fixtures.iter().map(|f| &f.profile)).output().unwrap();
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    if failure.is_none() {
+        for f in &fixtures[..2] {
+            assert_eq!(fs::read_to_string(f.root.join("trace")).unwrap(), "initialize\n");
+        }
+    }
 }
 
 #[test]

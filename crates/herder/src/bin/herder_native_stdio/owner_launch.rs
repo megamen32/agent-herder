@@ -588,6 +588,7 @@ fn build_owner(
         .with_create_policy(policy.clone())
         .with_reconciler(reconciler);
     Ok(super::owner_opencode::BoundOwner {
+        adapter_available: true,
         autopilot,
         harness: "codex".into(),
         session_recovery,

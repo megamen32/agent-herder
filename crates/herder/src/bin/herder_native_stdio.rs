@@ -4,6 +4,9 @@ use std::{env, io, sync::Arc};
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[path = "herder_native_stdio/owner_opencode.rs"]
 mod owner_opencode;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[path = "herder_native_stdio/owner_unavailable.rs"]
+mod owner_unavailable;
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[path = "herder_native_stdio/owner_multi.rs"]
