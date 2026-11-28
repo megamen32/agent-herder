@@ -494,10 +494,12 @@ pub(super) fn open_adapter(
             20
         }),
     };
+    // The MCP controller gives Close -> Start ten seconds in total. Reserve
+    // three seconds for core/compat startup after bounded owner handshakes.
     let client = AhapClient::open_bounded_startup(
         config,
         matches!(harness.as_str(), "chatgpt" | "zai"),
-        Duration::from_secs(15),
+        Duration::from_secs(7),
     ).map_err(|error| -> Box<dyn std::error::Error> {
         if matches!(&error, AhapError::Initialization { cause, .. }
             if matches!(cause.as_ref(), AhapError::OutcomeUnknown | AhapError::BeforeSend | AhapError::Unavailable))
