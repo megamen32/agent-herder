@@ -468,7 +468,7 @@ pub fn open_owner(path: &Path) -> Result<OpenedOwner, Box<dyn std::error::Error>
                 }
             }
         }
-        "opencode" | "codex" | "zcode" | "chatgpt" | "zai" => {
+        "opencode" | "codex" | "zcode" | "claude" | "chatgpt" | "zai" => {
             trusted_executable(&owner.executable)?;
             if !owner.ahap_script.as_ref().is_some_and(|p| p.is_absolute()) {
                 return Err(invalid().into());

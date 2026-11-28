@@ -816,18 +816,18 @@ export function registerSessionTools(server: McpServer, deps: {
       ? JSON.stringify({ delivery, response })
       : delivery }] };
   });
-  server.registerTool("create_session", { description: "Create one named OpenCode, Codex, ZCode, or Fast Agent session in an absolute canonical working directory. Codex serviceTier defaults to normal; serviceTier is rejected for other harnesses.", inputSchema: CreateSessionSchema }, async (args) => {
+  server.registerTool("create_session", { description: "Create one named Claude, OpenCode, Codex, ZCode, or Fast Agent session in an absolute canonical working directory. Codex serviceTier defaults to normal; serviceTier is rejected for other harnesses.", inputSchema: CreateSessionSchema }, async (args) => {
     const hostId = normalizeHostId(args.hostId, hostname());
     if (hostId.toLowerCase() !== hostname().toLowerCase()) {
       const peer = selectedRemotePeer(hostId);
       if (!peer) throw new Error(`host_target_unavailable:${hostId}`);
       if (args.sourceSessionId || args.sourceHarness || args.sourceSessions?.length) throw new Error("remote_create_source_check_unavailable");
-      if (!["codex", "zcode", "opencode"].includes(args.harness)) throw new Error("remote_create_harness_unsupported");
+      if (!["codex", "claude", "zcode", "opencode"].includes(args.harness)) throw new Error("remote_create_harness_unsupported");
       const transport = peerTransport ?? new FleetDirectTransport([peer]);
       const target = `mcp:shell:${peer.hostId}:AgentHerder`;
       const info = unwrapResult(await transport.call(target, "fleet_node_info", {}));
       if (info.hostId !== peer.hostId || info.guardedNamedCreate !== true) throw new Error("remote_named_create_guard_unavailable");
-      const request = { harness: args.harness, name: args.name, cwd: args.cwd, ...(args.model ? { model: args.model } : {}), ...(args.serviceTier ? { serviceTier: args.serviceTier } : {}) };
+      const request = { harness: args.harness, name: args.name, cwd: args.cwd, effort: args.effort, thinkingBudget: args.thinkingBudget, permissionMode: args.permissionMode, ...(args.model ? { model: args.model } : {}), ...(args.serviceTier ? { serviceTier: args.serviceTier } : {}) };
       const intent = createHash("sha256").update(JSON.stringify(["named-session-v1", peer.hostId, args.harness, args.name, args.cwd])).digest("hex");
       const remote = unwrapResult(await transport.call(target, "create_session", request, intent));
       const result = { ...remote, hostId: peer.hostId };
