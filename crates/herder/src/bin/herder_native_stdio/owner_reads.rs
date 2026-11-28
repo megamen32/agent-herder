@@ -711,7 +711,15 @@ pub(super) async fn native_opencode_registered_list(
                 let status = if session.time.busy.is_some() { "running" }
                     else if session.time.idle.is_some() { "idle" }
                     else { "unknown" };
-                let mut row = json!({"id":id, "harness":"opencode", "cwd":session.directory, "status":status});
+                let mut row = json!({
+                    "id":id, "harness":"opencode", "cwd":session.directory, "status":status,
+                    "hostId":instance.node.0, "needsPermission":session.needs_permission.unwrap_or(false)
+                });
+                if session.time.updated.is_finite() && session.time.updated >= 0.0 {
+                    if let Some(updated) = chrono::DateTime::from_timestamp_millis(session.time.updated as i64) {
+                        row["lastActivity"] = json!(updated.to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
+                    }
+                }
                 if let Some(model) = session.model {
                     row["model"] = json!(model);
                 }

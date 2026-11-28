@@ -29,6 +29,8 @@ pub struct OpenCodeSession {
     pub project_id: String,
     pub outcome: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub needs_permission: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     pub time: OpenCodeSessionTime,
     pub directory: String,
@@ -61,6 +63,8 @@ struct SessionWire {
     #[serde(rename = "projectID")]
     project_id: String,
     outcome: Option<String>,
+    #[serde(rename = "needsPermission")]
+    needs_permission: Option<bool>,
     model: Option<SessionModelWire>,
     time: SessionTimeWire,
     location: SessionLocationWire,
@@ -474,6 +478,7 @@ impl OpenCodeSessionReader {
             parent_session_id: session.parent_id,
             project_id: session.project_id,
             outcome: session.outcome,
+            needs_permission: session.needs_permission,
             model: session.model.and_then(SessionModelWire::qualified_id),
             time: OpenCodeSessionTime {
                 created: session.time.created,
