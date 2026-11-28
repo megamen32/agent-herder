@@ -1,250 +1,21 @@
 #!/usr/bin/env python3
-"""Update native recovery owners using an operator's prepared fleet release."""
+"""Update the central recovery owner using its prepared release."""
 
 import argparse
 import fcntl
 import json
 import os
-import re
-import shlex
 import socket
 import subprocess
 import sys
-import tempfile
-import uuid
 from pathlib import Path
 
-from deployment_config import descriptor_digest, load_config, private_json
-from recovery_owner_update import (
-    atomic,
-    check,
-    digest,
-    recovered_cutover,
-    verify_observation,
-)
-from release_gate import ReleaseGate
-from remote_release_gate import deployment_target, run_authorized_ssh
-
-HERE = Path(__file__).resolve().parent
-SSH = [
-    "-o",
-    "BatchMode=yes",
-    "-o",
-    "StrictHostKeyChecking=yes",
-    "-o",
-    "ConnectTimeout=4",
-    "-o",
-    "ServerAliveInterval=5",
-    "-o",
-    "ServerAliveCountMax=2",
-]
-HELPERS = (
-    "recovery_owner_update.py",
-    "remote_release_gate.py",
-    "deployment_config.py",
-    "main_guard.py",
-    "release_gate.py",
-    "release_rules.py",
-    "rollout-node.py",
-)
+from deployment_config import private_json
+from recovery_owner_update import atomic, check, digest
 
 
 def read(path):
     return json.loads(Path(path).read_bytes())
-
-
-def output(args, **kwargs):
-    return subprocess.check_output(args, text=True, timeout=kwargs.pop("timeout", 20), **kwargs).strip()
-
-
-def lease(plan, target, work, action, owner):
-    proof = work / "proof.json"
-    req = {"action": action, "cwd": plan["repo"], "deploymentTarget": target, "owner": owner}
-    if action == "acquire":
-        req["ttlSeconds"] = 600
-    if action == "release":
-        saved = read(proof)
-        check(saved["owner"] == owner and saved["deploymentTarget"] == target, "release owner changed")
-        req.update(token=saved["token"], fence=saved["fence"])
-    scheduler = plan["scheduler_unit"]
-    pid = int(output(["systemctl", "--user", "show", scheduler, "-p", "MainPID", "--value"]))
-    proc = Path("/proc") / str(pid)
-    binary = (proc / "exe").resolve(strict=True)
-    args = [Path(os.fsdecode(v)) for v in (proc / "cmdline").read_bytes().split(b"\0") if v]
-    (entry,) = [a for a in args if a.name == "index.js" and a.is_absolute() and a.parent.name == "dist"]
-    cmd = [
-        binary,
-        entry.with_name("project-release-admin.js"),
-        "--ledger",
-        plan["ledger"],
-        "--authority-host",
-        socket.gethostname(),
-    ]
-    with tempfile.NamedTemporaryFile(mode="w", dir=work) as inp:
-        json.dump(req, inp)
-        inp.flush()
-        cmd += ["--request", inp.name]
-        if action == "acquire":
-            cmd += ["--proof-out", proof]
-        result = subprocess.run(cmd, check=False, capture_output=True, timeout=45)
-    check(result.returncode == 0, "lease authority failed: " + action)
-    reply = json.loads(result.stdout)
-    check(not reply.get("disabled") and not reply.get("bypassed"), "release lease disabled")
-    return reply
-
-
-def live_snapshot(ssh, node):
-    command = shlex.join([node["pythonBin"], "-B", "-", "inspect", node["unit"], node["hostId"]])
-    with (HERE / "recovery_owner_update.py").open("rb") as code:
-        return json.loads(output(ssh + [command], stdin=code))
-
-
-def read_remote_result(ssh, packet):
-    return json.loads(output(ssh + ["cat " + shlex.quote(packet + "/result.json")]))
-
-
-def remote_node(plan, node, source, sha, binary, root):
-    node_id = node["id"]
-    work = root / node_id
-    work.mkdir(mode=0o700, exist_ok=True)
-    target = node["sshUser"] + "@" + node["address"]
-    ssh = ["ssh", "-T", *SSH, "-p", str(node["sshPort"]), target]
-    scp = ["scp", "-q", *SSH, "-P", str(node["sshPort"])]
-    check(output(ssh + ["hostname"]) == node["hostId"], "unexpected SSH host")
-    remote_config = Path(node["fleetDir"]) / "node-config.json"
-    current = json.loads(output(ssh + ["cat " + shlex.quote(str(remote_config))]))["sourceSha"]
-    check(re.fullmatch(r"[a-f0-9]{40}", current), "invalid installed scheduler revision")
-    # The native component can advance while the compatible scheduler stays installed.
-    revision = {"previousSha": current, "candidateSha": source}
-    proof = work / "proof.json"
-    intent = work / "intent.json"
-    if intent.exists():
-        prior = read(intent)
-        check(
-            (prior["source"], prior["sha256"]) == (source, sha),
-            "existing operation has a different candidate",
-        )
-    else:
-        check(not proof.exists(), "lease exists without an operation")
-    ready = work / "result.json"
-
-    def validate_result(result, prior):
-        if result.get("status") in ("rolled-back", "refused-before-switch"):
-            verify_observation(prior["baseline"], live_snapshot(ssh, node))
-        else:
-            verify_live(ssh, node, sha, result)
-
-    def archive_failure(result):
-        attempt = read(work / "contract.json")["run"]
-        atomic(work / ("attempt-" + attempt + ".json"), json.dumps(result).encode())
-        intent.unlink(missing_ok=True)
-        (work / "admitted").unlink(missing_ok=True)
-        ready.unlink(missing_ok=True)
-
-    if intent.exists():
-        packet = prior["packet"]
-        if proof.exists():
-            # The remote gate must have settled, and the live process must match before closing a lost ACK.
-            if ready.exists():
-                result = read(ready)
-            else:
-                try:
-                    result = read_remote_result(ssh, packet)
-                except subprocess.CalledProcessError:
-                    # The packet may have been cleaned up after the switch.
-                    # Reconcile from the pinned baseline and the routed owner.
-                    result = recovered_cutover(prior, live_snapshot(ssh, node))
-            validate_result(result, prior)
-            resume_owner = read(proof)["owner"]
-            status = lease(plan, deployment_target(node), work, "status", resume_owner)
-            check(
-                not any(
-                    status.get(k) for k in ("canonicalBusy", "deploymentInProgress", "reconcileRequired")
-                ),
-                "previous release effect requires reconciliation",
-            )
-            if status.get("lease"):
-                check(
-                    lease(plan, deployment_target(node), work, "release", resume_owner).get("released"),
-                    "lease release failed",
-                )
-            atomic(ready, json.dumps(result).encode())
-            proof.unlink()
-        if ready.exists():
-            result = read(ready)
-            if result.get("status") in ("rolled-back", "refused-before-switch"):
-                validate_result(result, prior)
-                archive_failure(result)
-            else:
-                current_owner = verify_live(ssh, node, sha, result)
-                return dict(current_owner, status="already-installed")
-        # Before acquiring a lease this operation cannot have changed the live owner.
-        check(not (work / "admitted").exists(), "previous lease outcome needs reconciliation")
-    baseline = live_snapshot(ssh, node)
-    if baseline["sha256"] == sha:
-        result = dict(baseline, status="already-installed")
-        return result
-    packet = output(ssh + ["umask 077 && mktemp -d /tmp/herder-recovery.XXXXXXXX"])
-    check(re.fullmatch(r"/tmp/herder-recovery\.[A-Za-z0-9]{8}", packet), "invalid remote staging directory")
-    contract = dict(
-        run=uuid.uuid4().hex,
-        descriptor=node,
-        descriptorDigest=descriptor_digest(node),
-        native_sha256=sha,
-        native_source=source,
-        baseline=baseline,
-        **revision,
-        **{k: node[k] for k in ("fleetDir", "unit", "hostId")},
-    )
-    atomic(work / "contract.json", json.dumps(contract).encode())
-    atomic(
-        intent, json.dumps({"source": source, "sha256": sha, "packet": packet, "baseline": baseline}).encode()
-    )
-    subprocess.run(
-        scp
-        + [*[HERE / name for name in HELPERS], work / "contract.json", binary, target + ":" + packet + "/"],
-        check=True,
-        timeout=120,
-    )
-    owner = {
-        "hostId": socket.gethostname(),
-        "harness": "codex" if os.environ.get("CODEX_THREAD_ID") else "operator",
-        "nativeSessionId": os.environ.get("CODEX_THREAD_ID") or contract["run"],
-        "process": {
-            "pid": os.getpid(),
-            "bootId": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
-            "startTicks": int(Path("/proc/self/stat").read_text().rsplit(")", 1)[1].split()[19]),
-        },
-    }
-    authority_target = deployment_target(node)
-    admitted = lease(plan, authority_target, work, "acquire", owner)
-    check(admitted.get("acquired") and read(proof)["owner"] == owner, "another operator holds the lease")
-    atomic(work / "admitted", str(read(proof)["fence"]).encode())
-    with ReleaseGate(proof, plan["ledger"], target=authority_target, require_target_lease=True) as gate:
-        gate.candidate_descends_from(baseline["native_source"], source)
-        rc = run_authorized_ssh(
-            ssh + [shlex.join([node["pythonBin"], "-B", packet + "/recovery_owner_update.py"])],
-            gate,
-            contract,
-        )
-    result = read_remote_result(ssh, packet)
-    check(
-        (rc == 0) == (result.get("status") in ("installed", "already-installed")),
-        "remote exit and receipt disagree",
-    )
-    validate_result(result, read(intent))
-    atomic(ready, json.dumps(result).encode())
-    check(lease(plan, authority_target, work, "release", owner).get("released"), "lease release unconfirmed")
-    proof.unlink()
-    if rc:
-        archive_failure(result)
-        raise RuntimeError(result["status"] + ": " + result["error"])
-    return result
-
-
-def verify_live(ssh, node, sha, result):
-    check(result["sha256"] == sha, "previous receipt belongs to a different release")
-    return verify_observation(result, live_snapshot(ssh, node))
 
 
 def local_owner(entry, bundle, src, sha):
@@ -289,52 +60,23 @@ def execute(plan, only):
     sha = manifest["sha256"]["core"]
     check(src == plan["source"] and sha == digest(binary), "prepared native release identity changed")
     check(socket.gethostname() == plan["controller_host"], "run on the release authority")
+    hosts = plan["hosts"]
+    owners = [name for name, entry in hosts.items() if entry["mode"] == "local"]
+    check(len(owners) == 1, "expected exactly one local central owner")
+    name = owners[0]
+    check(only is None or list(dict.fromkeys(only)) == owners,
+          "recovery rollout can update only the central owner")
     root = Path(plan["journal"]) / src
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
-    nodes = {n["id"]: n for n in load_config(plan["deployment_config"])["nodes"]}
-    selected = list(plan["hosts"]) if not only else only
-    check(all(name in plan["hosts"] for name in selected), "unknown fleet host")
-    success = True
     with (root / "operator.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        for name in selected:
-            p = plan["hosts"][name]
-            try:
-                if p["mode"] == "local":
-                    result = local_owner(p, bundle, src, sha)
-                elif p["mode"] == "host-local":
-                    result = remote_node(plan, nodes[name], src, sha, binary, root)
-                elif p["mode"] == "ssh":
-                    route_errors = []
-                    for endpoint in p["routes"]:
-                        ssh = ["ssh", "-T", *SSH, "-p", str(endpoint["port"]), endpoint["target"]]
-                        try:
-                            host = output(
-                                ssh + ["scutil --get LocalHostName && sysctl -n hw.model && uname -m"],
-                                timeout=7,
-                                stderr=subprocess.PIPE,
-                            )
-                            break
-                        except (subprocess.SubprocessError, OSError) as error:
-                            detail = getattr(error, "stderr", "") or str(error)
-                            route_errors.append(endpoint["target"] + ": " + detail.strip()[:180])
-                    else:
-                        raise RuntimeError(" | ".join(route_errors))
-                    check(host.splitlines() == p["identity"], "unexpected Mac hardware or local hostname")
-                    check(p.get("command"), "no prepared Darwin owner release for this host")
-                    result = json.loads(output(ssh + [shlex.join(p["command"])], timeout=180))
-                    check(
-                        result["source"] == src and result["sha256"] == p["sha256"],
-                        "Darwin owner receipt mismatch",
-                    )
-                else:
-                    raise ValueError("unknown release mode")
-            except (RuntimeError, ValueError, OSError, KeyError, subprocess.SubprocessError) as error:
-                result = {"status": "incomplete", "error": str(error)}
-                success = False
-            print(json.dumps(dict(host=name, **result), ensure_ascii=False), flush=True)
-            atomic(root / (name + ".json"), json.dumps(result).encode())
-    return 0 if success else 1
+        try:
+            result = local_owner(hosts[name], bundle, src, sha)
+        except (RuntimeError, ValueError, OSError, KeyError, subprocess.SubprocessError) as error:
+            result = {"status": "incomplete", "error": str(error)}
+        print(json.dumps(dict(host=name, **result), ensure_ascii=False), flush=True)
+        atomic(root / (name + ".json"), json.dumps(result).encode())
+    return int(result["status"] != "verified")
 
 
 if __name__ == "__main__":

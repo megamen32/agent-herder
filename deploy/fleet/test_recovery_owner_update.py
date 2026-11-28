@@ -1,6 +1,7 @@
 import json
 import runpy
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -38,6 +39,24 @@ class LocalOwnerReceipt(unittest.TestCase):
     def verified(self):
         self.selector.write_text(self.selection)
         self.receipt.write_text(json.dumps({"source": self.source, "core_sha256": self.sha}))
+
+    def test_legacy_multihost_plan_updates_only_the_controller(self):
+        self.verified()
+        (self.bundle / "manifest.json").write_text(json.dumps({
+            "source_commit": self.source, "sha256": {"core": self.sha},
+        }))
+        execute = self.local_owner.__globals__["execute"]
+        plan = {
+            "bundle": self.bundle, "source": self.source, "controller_host": socket.gethostname(),
+            "journal": self.bundle.parent / "journal", "deployment_config": "unused",
+            "hosts": {"server100": dict(self.entry, mode="local"), "server-44": {"mode": "host-local"}},
+        }
+        with self.assertRaisesRegex(RuntimeError, "central owner"):
+            execute(plan, ["server100", "server-44"])
+        self.assertFalse(plan["journal"].exists())
+        self.assertEqual(execute(plan, None), 0)
+        self.assertTrue((plan["journal"] / self.source / "server100.json").is_file())
+        self.assertFalse((plan["journal"] / self.source / "server-44.json").exists())
 
     def test_reentry_reads_the_installed_owner_without_a_second_cutover(self):
         self.selector.write_text('{"profiles":["before"]}')
