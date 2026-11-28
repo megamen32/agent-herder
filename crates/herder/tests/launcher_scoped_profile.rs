@@ -1943,6 +1943,10 @@ try:
  assert len(responses[3]['sessions'])==1,responses
  reply=receive(time.monotonic()+22)
  assert reply['id']==1 and reply['result']['isError'] and reply['result']['structuredContent']['code']=='owner_read_timeout',reply
+ send(5,'tools/call',{'name':'sessions','arguments':{'action':'list','node_ref':'node'}})
+ partial=receive(time.monotonic()+2)['result']['structuredContent']
+ assert partial.get('complete') is False and len(partial['sessions'])==1,partial
+ assert any(source.get('error',{}).get('code')=='owner_read_cooling_down' for source in partial['sources']),partial
  open(os.path.join(os.path.dirname(sys.argv[2]),'release'),'w').close()
  deadline=time.monotonic()+2
  while not os.path.exists(os.path.join(os.path.dirname(sys.argv[2]),'released')):

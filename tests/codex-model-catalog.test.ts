@@ -9,6 +9,21 @@ describe('native Codex model discovery',()=>{
   for(const p of pages)request.mockResolvedValueOnce(p);
   return {adapter,ready,request};
  }
+ it('coalesces a burst and backs off after failed catalog reads',async()=>{
+  const f=fake([]);
+  f.request.mockRejectedValue(new Error('offline'));
+  const burst=await Promise.allSettled(Array.from({length:8},()=>f.adapter.listModels()));
+  expect(burst.every(result=>result.status==='rejected')).toBe(true);
+  await expect(f.adapter.listModels()).rejects.toThrow('offline');
+  expect(f.request).toHaveBeenCalledTimes(1);
+  const clock=vi.spyOn(Date,'now').mockReturnValue(Date.now()+1001);
+  try {
+   f.request.mockResolvedValueOnce({data:[{model:'available'}]});
+   await expect(f.adapter.listModels()).resolves.toEqual(['available']);
+   await expect(f.adapter.listModels()).resolves.toEqual(['available']);
+   expect(f.request).toHaveBeenCalledTimes(2);
+  } finally { clock.mockRestore(); }
+ });
  it('reads the native current catalog instead of legacy o4-mini constants',async()=>{
   const f=fake([{data:[{id:'luna-ui',model:'gpt-6-luna',isDefault:false},{id:'sol-ui',model:'gpt-6.1-sol',isDefault:true},{model:'hidden',hidden:true}],nextCursor:null}]);
   expect(await f.adapter.listModels()).toEqual(['gpt-6.1-sol','gpt-6-luna']);

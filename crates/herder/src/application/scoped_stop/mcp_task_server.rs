@@ -43,6 +43,10 @@ impl ScopedTaskServer {
             reconciler: None,
         }
     }
+    pub fn set_node_slots(&mut self, slots: Arc<tokio::sync::Semaphore>) {
+        self.inner.set_node_slots(slots);
+    }
+
     /// Read-only routing lookup. A multi-instance ingress must select exactly
     /// one owner before invoking reconciliation; this method performs no native I/O.
     pub fn has_task(&self, id: &str) -> Result<bool, ()> {
