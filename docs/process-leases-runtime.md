@@ -196,6 +196,37 @@ For a legacy profile already on direct CDP, use just `--native-update chatgpt` o
 
 The OpenCode-only transition retains its existing record format. An already native OpenCode endpoint profile and a local Codex profile with `AHAP_CODEX_BIN`, `CODEX_HOME` and `AHAP_CODEX_CWD` keep their current profile paths. Remote wrapper descriptors remain pinned to the exact node, instance, script and configuration. Run `check --staged-profiles` as shown below to verify all selected profiles before installation.
 
+## Restore a retained quarantine owner
+
+A missing previously selected AHAP owner can be restored in the normal native
+build with an explicit historical selector and exact profile pins:
+
+~~~sh
+--restore-retained-owner "$RETAINED_SELECTOR" "$RETAINED_SELECTOR_SHA256" \
+  "$RETAINED_PROFILE" "$RETAINED_PROFILE_SHA256"
+~~~
+
+The profile must belong to that pinned selector and manifest, use the currently
+pinned Node executable and adapter, and match an exact authority in the current
+canonical quarantine. The existing database must retain the same generation,
+database/gate inode identities and quarantine setting. SQLite sidecars or a busy
+gate block restoration. The builder records a schema 4 restoration intent and
+the installer repeats these checks under the existing rollout admission.
+
+The operation appends the original profile without rewriting its database,
+policy, grants or environment. Existing native browser profiles use the usual
+core executable rebind; all previous source profile files remain intact.
+Resource bindings and administrator principals remain unchanged. Restoration
+cannot be combined with another profile migration in one build. Use the normal
+guarded paired rollout for the resulting native candidate.
+
+For a release that needs no native rebuild, the separate
+`restore-retained-owner` subcommand accepts `--selector`, `--launcher`,
+`--output`, `--expected-selector-sha256`, `--retained-selector FILE SHA256`
+and `--profile FILE SHA256`. It stages a selector-only candidate with the
+installed runtime source. It cannot supersede an attempt that requires a new
+native source commit.
+
 ## Build and inspect
 
 Commit the reviewed implementation first. The build rejects dirty source before or after Cargo runs. Candidate and state-root parents must already exist; paths must be absolute and canonical.
@@ -208,6 +239,7 @@ HERDER_SELECTOR=/home/roomhacker/.config/agent-herder/gptadmin-entry.json
 
 python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-test.py"
 python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-adapters-test.py"
+python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-retained-owner-test.py"
 python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-rollout-test.py"
 python3 "$HERDER_WORKTREE/deploy/fleet/process-leases-wait-test.py"
 

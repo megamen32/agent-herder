@@ -1381,6 +1381,8 @@ def native_profile_transition(old, new, before, after, *, installed=False):
     if not isinstance(migration, dict) or type(migration.get("schema")) is not int:
         raise ValueError("invalid native profile migration")
     schema = migration["schema"]
+    if schema == 4:
+        return retained_owner_transition(old, new, before, after, migration_path, migration, installed=installed)
     if schema == 2 and "registration" in migration:
         return browser_registration_transition(old, new, before, after, migration_path, migration, installed=installed)
     recovering = schema in (1, 3) and migration.get("kind") == "recovery"
@@ -1548,6 +1550,281 @@ def check_candidate(selector, launcher):
             "profile_validation": "staged_payloads_not_installed"}
 
 
+
+def retained_pin(path, expected=None):
+    """Read a protected retained input without accepting a replaced file."""
+    selected = Path(path)
+    resolved = private_file(selected)
+    before = resolved.stat()
+    raw = resolved.read_bytes()
+    stable = lambda s: (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+    if stable(before) != stable(resolved.stat()) or private_file(selected) != resolved:
+        raise ValueError("retained input changed while reading")
+    sha256 = hashlib.sha256(raw).hexdigest()
+    if expected is not None and (not isinstance(expected, str)
+            or not re.fullmatch(r"[a-f0-9]{64}", expected) or sha256 != expected):
+        raise ValueError("retained input pin mismatch")
+    return {"path": str(selected), "sha256": sha256}, raw
+
+
+def retained_authority(profile, snapshot_pin):
+    database, gate = (private_file(profile[key]) for key in ("database", "gate"))
+    sidecars = [Path(str(database) + suffix) for suffix in ("-wal", "-shm", "-journal")]
+    if any(os.path.lexists(path) for path in sidecars):
+        raise ValueError("retained authority has SQLite sidecars")
+    db_stat, gate_stat = database.stat(), gate.stat()
+    # Observe the existing authority only. Never bootstrap, migrate, checkpoint,
+    # reconcile pending requests, or create SQLite journal files during restore.
+    with gate.open("rb") as gate_file:
+        fcntl.flock(gate_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        db_hash = digest(database)
+        with contextlib.closing(sqlite3.connect(database.as_uri() + "?mode=ro&immutable=1", uri=True)) as db:
+            db.execute("PRAGMA query_only=ON")
+            authority = db.execute(
+                "SELECT singleton,generation,gate_device,gate_inode,database_device,database_inode "
+                "FROM humanstop_authority").fetchall()
+            if authority != [(1, profile["generation"], gate_stat.st_dev, gate_stat.st_ino,
+                              db_stat.st_dev, db_stat.st_ino)]:
+                raise ValueError("retained authority identity differs from the existing database and gate")
+            quarantine = db.execute(
+                "SELECT value_json FROM settings WHERE scope='migration:legacy' AND setting_key='quarantine:v1'"
+            ).fetchall()
+            if (len(quarantine) != 1 or not isinstance(quarantine[0][0], str)
+                    or hashlib.sha256(quarantine[0][0].encode("utf-8")).hexdigest() != snapshot_pin["sha256"]):
+                raise ValueError("retained database quarantine does not match the canonical snapshot")
+        stable = lambda s: (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+        if (any(os.path.lexists(path) for path in sidecars)
+                or stable(db_stat) != stable(database.stat()) or digest(database) != db_hash
+                or stable(gate_stat) != stable(gate.stat())
+                or (os.fstat(gate_file.fileno()).st_dev, os.fstat(gate_file.fileno()).st_ino)
+                   != (gate_stat.st_dev, gate_stat.st_ino)):
+            raise ValueError("retained authority changed during observation")
+    return {"generation": profile["generation"],
+            "database": {"path": profile["database"], "device": db_stat.st_dev,
+                         "inode": db_stat.st_ino, "sha256": db_hash},
+            "gate": {"path": profile["gate"], "device": gate_stat.st_dev,
+                     "inode": gate_stat.st_ino, "sha256": digest(gate)}}
+
+
+def retained_owner_plan(base, selection, donor_pin, profile_pin):
+    """Prove continuity with one already quarantined, previously selected owner."""
+    for pin in (donor_pin, profile_pin):
+        if not isinstance(pin, dict) or set(pin) != {"path", "sha256"}:
+            raise ValueError("restore requires exact retained selector and profile pins")
+    donor_pin, donor_raw = retained_pin(donor_pin["path"], donor_pin["sha256"])
+    donor = strict_json(donor_raw)
+    donor_manifest_pin, donor_manifest_raw = retained_pin(donor["manifest"], donor["manifest_sha256"])
+    donor_manifest = strict_json(donor_manifest_raw)
+    profile_pin, raw = retained_pin(profile_pin["path"], profile_pin["sha256"])
+    if (not isinstance(donor.get("profiles"), list) or len(set(donor["profiles"])) != len(donor["profiles"])
+            or profile_pin["path"] not in donor["profiles"]):
+        raise ValueError("retained profile was not selected by the pinned historical selector")
+    profile, protected_raw = protected_profile(profile_pin["path"])
+    if raw != protected_raw:
+        raise ValueError("retained profile changed during validation")
+    owner = profile["owner"]
+    identity = {"harness": owner["kind"], "node_ref": owner["node"], "instance_ref": owner["instance"],
+                "authority_generation": profile["generation"]}
+    if any(not isinstance(value, str) or not value.strip() for value in identity.values()):
+        raise ValueError("invalid retained owner identity")
+    # This restoration only reselects an existing AHAP owner using the exact
+    # executable and adapter already trusted by the running release.
+    kind = identity["harness"]
+    for key, value in (("node", owner["executable"]),):
+        if (base[key] != donor_manifest[key] or value != base[key]
+                or base["sha256"][key] != donor_manifest["sha256"][key]
+                or digest(canonical(value)) != base["sha256"][key]):
+            raise ValueError("retained owner executable is not an unchanged trusted component")
+    if (owner.get("ahap_script") != base["adapters"].get(kind)
+            or donor_manifest["adapters"].get(kind) != base["adapters"].get(kind)
+            or donor_manifest["sha256"]["adapters"].get(kind) != base["sha256"]["adapters"].get(kind)
+            or digest(canonical(owner["ahap_script"])) != base["sha256"]["adapters"][kind]):
+        raise ValueError("retained owner adapter is not an unchanged trusted component")
+    if owner["principal"] not in configured_principals(selection):
+        raise ValueError("restoration cannot add an administrator principal")
+    profile_path = private_file(profile_pin["path"])
+    authority_parent(profile_path, profile)
+    snapshots = {}
+    retained_files = {private_file(profile[key]) for key in ("database", "gate")}
+    for selected in selection["profiles"]:
+        previous, previous_raw = protected_profile(selected)
+        snapshots[selected] = hashlib.sha256(previous_raw).hexdigest()
+        previous_owner = previous["owner"]
+        scopes = lambda value: {value.get("ahap_env", {}).get(key) for key in (BROWSER_SCOPE, USERIO_SCOPE)} - {None, ""}
+        if (kind in BROWSER_KINDS and previous_owner["kind"] == kind
+                and previous_owner["node"] == owner["node"] and scopes(owner).intersection(scopes(previous_owner))):
+            raise ValueError("restoration collides with an already selected browser account")
+        if (private_file(selected) == profile_path or private_file(selected).parent == profile_path.parent
+                or previous["generation"] == profile["generation"]
+                or (previous_owner["node"], previous_owner["instance"]) == (owner["node"], owner["instance"])
+                or retained_files.intersection(private_file(previous[key]) for key in ("database", "gate"))):
+            raise ValueError("restoration collides with an already selected authority")
+    config_binding = base.get("canonical_migration")
+    if not isinstance(config_binding, dict) or set(config_binding) != {"config", "sha256"}:
+        raise ValueError("restoration requires a pinned canonical quarantine")
+    _, config_raw = retained_pin(config_binding["config"], config_binding["sha256"])
+    config = strict_json(config_raw)
+    if (type(config.get("version")) is not int or config["version"] != 1
+            or config.get("mode") != "canonical" or not isinstance(config.get("epoch"), str)):
+        raise ValueError("restoration requires a valid canonical quarantine")
+    matches = [row for row in config["quarantine"]["snapshots"]
+               if all(row.get(key) == value for key, value in identity.items())]
+    if len(matches) != 1:
+        raise ValueError("retained owner is not the exact canonical quarantine authority")
+    snapshot = matches[0]
+    snapshot_pin, snapshot_raw = retained_pin(snapshot["path"], snapshot["sha256"])
+    value = strict_json(snapshot_raw)
+    expected = {"version": 1, "kind": "herder-legacy-quarantine", "epoch": config["epoch"],
+                "node_ref": owner["node"], "instance_ref": owner["instance"],
+                "authority_generation": profile["generation"],
+                "writer_drain_sha256": config["writer_drain"]["sha256"],
+                "inventory_sha256": config["quarantine"]["inventory_sha256"]}
+    if any(value.get(key) != wanted for key, wanted in expected.items()):
+        raise ValueError("retained quarantine snapshot differs from the canonical identity")
+    authority = retained_authority(profile, snapshot_pin)
+    return snapshots, {"retained_selector": donor_pin, "retained_manifest": donor_manifest_pin,
+                       "profile": profile_pin, "canonical_migration": config_binding,
+                       "quarantine": snapshot, "authority": authority,
+                       "principal": owner["principal"]}
+
+
+def retained_native_manifest(before, old, after, migration_path, source):
+    """Re-derive the normal native build, retaining every unrelated component."""
+    bundle = migration_path.parent
+    if source != after.get("source_commit") or source != after.get("source_sha"):
+        raise ValueError("restoration native build source mismatch")
+    hashes = {key: after["sha256"][key] for key in ("core", "process_worker", "process_config")}
+    for key in ("resource_bridge", "process_wait_reader"):
+        if (key in after and (after.get(key) != before.get(key)
+                or after["sha256"].get(key) != before["sha256"].get(key))):
+            hashes[key] = after["sha256"][key]
+    old_config, new_config = read_json(before["process_config"]), read_json(after["process_config"])
+    if ({key: value for key, value in old_config.items() if key != "worker"}
+            != {key: value for key, value in new_config.items() if key != "worker"}):
+        raise ValueError("restoration cannot change process authority or resource bindings")
+    expected = compose_manifest(before, bundle, source, Path(old["manifest"]), old["manifest_sha256"],
+                                hashes, after["process_leases_build"]["argv"])
+    expected["native_profile_migration"] = str(migration_path)
+    expected["sha256"]["native_profile_migration"] = digest(migration_path)
+    return expected
+
+
+def stage_retained_native_migration(base, manifest, selection, selector, output, source, restoration):
+    snapshots, observed = retained_owner_plan(
+        base, selection, restoration["retained_selector"], restoration["profile"])
+    if observed != restoration:
+        raise ValueError("retained authority changed during native build")
+    previous_hashes, planned = native_profile_plan(base, manifest, selection, output, source, [], {})
+    if previous_hashes != snapshots:
+        raise ValueError("current profiles changed during retained owner composition")
+    if planned:
+        payload_dir = output / "profile-payloads"
+        payload_dir.mkdir(mode=0o700)
+        profiles = stage_native_payloads(planned)
+        payload_dir.chmod(0o500)
+    else:
+        profiles = []
+    migration = {"schema": 4, "type": "herder-retained-owner-restore", "mode": "native-build",
+                 "source_commit": source, "restoration": restoration,
+                 "base_selector": str(selector), "base_selector_sha256": digest(selector),
+                 "base_manifest": selection["manifest"], "base_manifest_sha256": selection["manifest_sha256"],
+                 "profile_sha256": snapshots, "profiles": profiles}
+    path = output / "native-profile-migration.json"
+    create(path, encoded(migration), 0o400)
+    manifest["native_profile_migration"] = str(path)
+    manifest["sha256"]["native_profile_migration"] = digest(path)
+    return migration
+
+
+
+def retained_owner_transition(old, new, before, after, migration_path, migration, *, installed):
+    fields = {"schema", "type", "mode", "source_commit", "restoration", "base_selector", "base_selector_sha256",
+              "base_manifest", "base_manifest_sha256", "profile_sha256", "profiles"}
+    if (set(migration) != fields or migration["type"] != "herder-retained-owner-restore"
+            or migration["mode"] not in ("selector-only", "native-build")):
+        raise ValueError("invalid retained owner restoration intent")
+    restoration = migration["restoration"]
+    snapshots, expected_restore = retained_owner_plan(
+        before, old, restoration["retained_selector"], restoration["profile"])
+    source = after.get("process_leases_build", {}).get("source_commit", after["source_commit"])
+    if not isinstance(source, str) or not re.fullmatch(r"[a-f0-9]{40}", source):
+        raise ValueError("invalid retained owner source provenance")
+    if migration["mode"] == "native-build":
+        expected_manifest = retained_native_manifest(before, old, after, migration_path, source)
+        previous_hashes, planned = native_profile_plan(
+            before, after, old, migration_path.parent, source, [], {}, installed=installed)
+        if previous_hashes != snapshots:
+            raise ValueError("current profiles changed during retained owner validation")
+        rebound = checked_native_rows(migration["profiles"], planned, installed)
+    else:
+        expected_manifest = browser_registration_manifest(before, migration_path)
+        if migration["profiles"] != []:
+            raise ValueError("selector-only restoration cannot create profiles")
+        rebound = {}
+    expected = {**old, "manifest": new["manifest"], "manifest_sha256": new["manifest_sha256"],
+                "profiles": [rebound[path]["path"] if path in rebound else path for path in old["profiles"]]
+                            + [restoration["profile"]["path"]]}
+    if (restoration != expected_restore or migration["profile_sha256"] != snapshots or new != expected
+            or migration["source_commit"] != source
+            or migration["base_manifest"] != old["manifest"]
+            or migration["base_manifest_sha256"] != old["manifest_sha256"]
+            or digest(private_file(old["manifest"])) != old["manifest_sha256"]
+            or read_json(old["manifest"]) != before or after != expected_manifest):
+        raise ValueError("candidate differs from the exact retained owner restoration")
+    return migration
+
+
+def stage_retained_owner_restore(args):
+    """Stage an additive selector restore without creating authority or runtime files."""
+    selector, launcher = private_file(args.selector), private_file(args.launcher)
+    before = args.expected_selector_sha256
+    if digest(selector) != before:
+        raise ValueError("installed selector changed before retained owner restoration")
+    selection = read_json(selector)
+    base = read_json(selection["manifest"])
+    checked = check_selector(selector, launcher)
+    source = base.get("process_leases_build", {}).get("source_commit", base["source_commit"])
+    if not isinstance(source, str) or not re.fullmatch(r"[a-f0-9]{40}", source):
+        raise ValueError("installed release is missing immutable native source provenance")
+    output = planned_path(args.output)
+    if os.path.lexists(output):
+        raise FileExistsError("candidate output already exists")
+    snapshots, restoration = retained_owner_plan(
+        base, selection, dict(zip(("path", "sha256"), args.retained_selector)),
+        dict(zip(("path", "sha256"), args.profile)))
+    launch_bytes = launcher.read_bytes()
+    output.mkdir(mode=0o700)
+    fixture = output / "fixture"
+    fixture.mkdir(mode=0o700)
+    candidate_launcher = fixture / "launch-v1-core.py"
+    create(candidate_launcher, launch_bytes, 0o500)
+    migration_path = output / "native-profile-migration.json"
+    migration = {"schema": 4, "type": "herder-retained-owner-restore", "mode": "selector-only", "source_commit": source,
+                 "restoration": restoration, "base_selector": str(selector), "base_selector_sha256": before,
+                 "base_manifest": selection["manifest"], "base_manifest_sha256": selection["manifest_sha256"],
+                 "profile_sha256": snapshots, "profiles": []}
+    create(migration_path, encoded(migration), 0o400)
+    manifest_path = output / "manifest.json"
+    create(manifest_path, encoded(browser_registration_manifest(base, migration_path)), 0o400)
+    proposed = {**selection, "manifest": str(manifest_path), "manifest_sha256": digest(manifest_path),
+                "profiles": [*selection["profiles"], restoration["profile"]["path"]]}
+    proposed_path, staged_path = output / "selector.json", output / "check-selector.json"
+    create(proposed_path, encoded(proposed), 0o400)
+    create(staged_path, encoded(proposed), 0o400)
+    create(output / "process-leases-build.json", encoded({
+        "source_commit": source, "base_selector": str(selector), "base_selector_sha256": before,
+        "base_manifest_sha256": selection["manifest_sha256"], "launcher_sha256": digest(candidate_launcher),
+        "profile_sha256": snapshots, "process_config_sha256": checked["process_config_sha256"],
+        "candidate_selector_sha256": digest(proposed_path), "candidate_manifest_sha256": proposed["manifest_sha256"],
+        "staged_selector_sha256": digest(staged_path), "profile_migration_sha256": digest(migration_path),
+    }), 0o400)
+    result = check_candidate(proposed_path, candidate_launcher)
+    if digest(launcher) != digest(candidate_launcher):
+        raise ValueError("installed launcher changed during retained owner restoration")
+    for directory in (fixture, output):
+        directory.chmod(0o500)
+    return {**result, "status": "candidate_verified_not_installed", "base_selector_sha256": before}
+
 def stage_browser_registration(args):
     """Compose one additive selector candidate against the installed release."""
     selector, launcher = private_file(args.selector), private_file(args.launcher)
@@ -1631,11 +1908,12 @@ def build(args):
     updates = getattr(args, "adapter_update", [])
     native_updates = getattr(args, "native_update", [])
     recovery_profiles = getattr(args, "native_recovery_profile", [])
+    restore = getattr(args, "restore_retained_owner", None)
     if len(set(updates)) != len(updates) or not set(updates) <= ADAPTER_UPDATES:
         raise ValueError("select each reviewed adapter update once")
     if len(set(native_updates)) != len(native_updates) or not set(native_updates) <= NATIVE_PROFILE_UPDATES:
         raise ValueError("select each reviewed native profile update once")
-    if sum(map(bool, (updates, native_updates, recovery_profiles))) > 1:
+    if sum(map(bool, (updates, native_updates, recovery_profiles, restore))) > 1:
         raise ValueError("select only one profile migration type")
     browser_bindings = {}
     for kind, path, sha256 in getattr(args, "browser_binding", []):
@@ -1650,6 +1928,12 @@ def build(args):
     if canonical_config is not None:
         migration_binding = {"config": str(private_file(canonical_config)), "sha256": canonical_hash}
         canonical_migration_identity({"canonical_migration": migration_binding})
+    restoration = None
+    if restore:
+        if migration_binding is not None and migration_binding != base.get("canonical_migration"):
+            raise ValueError("restoration cannot replace the existing canonical quarantine")
+        _, restoration = retained_owner_plan(base, selection,
+            {"path": restore[0], "sha256": restore[1]}, {"path": restore[2], "sha256": restore[3]})
     profile_hashes = {path: digest(private_file(path)) for path in selection["profiles"]}
     config = process_config(selection, output / "fixture/herder_process_worker", args.node_ref,
                             args.execution_root, args.resource_root, args.storage_id)
@@ -1698,7 +1982,7 @@ def build(args):
         create(fixture / "process-wait-status.py", wait_reader.read_bytes(), 0o500)
         hashes["process_wait_reader"] = digest(fixture / "process-wait-status.py")
     remote_source = repo / "src/herder-process-remote-bridge.ts"
-    replace_remote_bridge = not recovery_profiles and remote_source.is_file()
+    replace_remote_bridge = not (recovery_profiles or restoration) and remote_source.is_file()
     compilation = compile_typescript(repo, output, sha, base) if updates or replace_remote_bridge else None
     remote_bridge = None
     if replace_remote_bridge:
@@ -1712,7 +1996,9 @@ def build(args):
             raise ValueError("canonical migration configuration changed during build")
         manifest["canonical_migration"] = migration_binding
     migration = None
-    if updates:
+    if restoration:
+        migration = stage_retained_native_migration(base, manifest, selection, selector, output, sha, restoration)
+    elif updates:
         adapters, adapter_build = bundle_adapters(repo, output, sha, base, updates, compilation)
         migration = stage_adapter_migration(base, manifest, selection, selector, output, sha, adapters, adapter_build)
     else:
@@ -1728,6 +2014,8 @@ def build(args):
     if migration:
         rebound = {item["previous_path"]: item["path"] for item in migration["profiles"]}
         candidate_selection["profiles"] = [rebound.get(path, path) for path in selection["profiles"]]
+        if restoration:
+            candidate_selection["profiles"].append(restoration["profile"]["path"])
     create(output / "selector.json", encoded(candidate_selection), 0o400)
     build_receipt = {"source_commit": sha, "base_selector": str(selector),
                      "base_selector_sha256": before, "base_manifest_sha256": selection["manifest_sha256"],
@@ -1784,8 +2072,10 @@ def install(args, *, guard=None):
         old_manifest, candidate_manifest = read_json(old["manifest"]), read_json(new["manifest"])
         migration = profile_migration(old, new, old_manifest, candidate_manifest)
         registration = migration is not None and "registration" in migration
-        if registration and old_launcher_hash != build_receipt["launcher_sha256"]:
-            raise ValueError("installed launcher changed since browser registration")
+        restoration = migration is not None and migration.get("type") == "herder-retained-owner-restore"
+        selector_only = registration or (restoration and migration["mode"] == "selector-only")
+        if selector_only and old_launcher_hash != build_receipt["launcher_sha256"]:
+            raise ValueError("installed launcher changed since selector-only migration")
         if set(build_receipt["profile_sha256"]) != set(old["profiles"]):
             raise ValueError("candidate profile snapshot is incomplete")
         config = read_json(candidate_manifest["process_config"])
@@ -1803,18 +2093,20 @@ def install(args, *, guard=None):
             "selector_before_sha256": old_hash, "launcher_before_sha256": old_launcher_hash,
             "selector_after_sha256": digest(candidate), "launcher_after_sha256": digest(candidate_launcher),
             "selector_mode": stat.S_IMODE(selector.stat().st_mode), "launcher_mode": stat.S_IMODE(launcher.stat().st_mode),
-            "profiles_preserved": migration is None or registration, "authority_preserved": True,
+            "profiles_preserved": migration is None or selector_only, "authority_preserved": True,
             "previous_profiles_unchanged": True, "databases_modified": False}
         if migration:
             receipt["profile_migration_sha256"] = candidate_manifest["sha256"].get("adapter_migration", candidate_manifest["sha256"].get("native_profile_migration"))
             receipt["profile_creation_intent"] = migration["profiles"]
+            if restoration:
+                receipt["profile_restoration_intent"] = migration["restoration"]
         receipt_path = backup / "receipt.json"
         create(receipt_path, encoded(receipt))
-        if registration:
+        if selector_only:
             sync_dir(backup)
             sync_dir(backup.parent)
         require_mutation_guard(guard, selector, "install")
-        receipt["state_roots"] = state_roots(config, provision=not registration)
+        receipt["state_roots"] = state_roots(config, provision=not selector_only)
         receipt["status"] = "state_prepared"
         replace(receipt_path, encoded(receipt), digest(receipt_path), 0o600)
         if migration:
@@ -1844,17 +2136,21 @@ def install(args, *, guard=None):
             receipt["status"] = "profiles_prepared"
             replace(receipt_path, encoded(receipt), digest(receipt_path), 0o600)
         require_mutation_guard(guard, selector, "install")
-        if registration:
+        if selector_only:
             proposed = candidate.read_bytes()
             if (digest(launcher) != old_launcher_hash
                     or hashlib.sha256(proposed).hexdigest() != build_receipt["candidate_selector_sha256"]
                     or digest(private_file(new["manifest"])) != new["manifest_sha256"]):
-                raise ValueError("browser registration changed before selector switch")
+                raise ValueError("selector-only migration changed before selector switch")
             profile_migration(old, new, old_manifest, candidate_manifest, installed=True)
             replace(selector, proposed, old_hash, receipt["selector_mode"])
         else:
+            if restoration:
+                profile_migration(old, new, old_manifest, candidate_manifest, installed=True)
             replace(launcher, candidate_launcher.read_bytes(), old_launcher_hash, receipt["launcher_mode"])
             require_mutation_guard(guard, selector, "install")
+            if restoration:
+                profile_migration(old, new, old_manifest, candidate_manifest, installed=True)
             replace(selector, candidate.read_bytes(), old_hash, receipt["selector_mode"])
         checked = check_selector(selector, launcher)
         receipt["status"] = "configured_pending_restart"
@@ -1911,12 +2207,21 @@ def main():
                    help="reviewed successor profile for Codex inventory, shared socket, recovery handoff or session autopilot")
     b.add_argument("--browser-binding", action="append", nargs=3, default=[], metavar=("KIND", "FILE", "SHA256"),
                    help="pin a private operator-reviewed browser binding for a selected browser")
+    b.add_argument("--restore-retained-owner", nargs=4,
+                   metavar=("SELECTOR", "SELECTOR_SHA256", "PROFILE", "PROFILE_SHA256"),
+                   help="append one pinned retained quarantine authority in this native build")
     a = sub.add_parser("register-browser", help="stage one additional browser owner using the installed release")
     for name in ("selector", "launcher", "output"):
         a.add_argument("--" + name, required=True, type=Path)
     a.add_argument("--expected-selector-sha256", required=True)
     a.add_argument("--browser-binding", required=True, nargs=4, metavar=("KIND", "INSTANCE", "FILE", "SHA256"),
                    help="pin the exact new browser instance and its private owner-bootstrap binding")
+    r = sub.add_parser("restore-retained-owner", help="restore one pinned previously selected quarantine authority")
+    for name in ("selector", "launcher", "output"):
+        r.add_argument("--" + name, required=True, type=Path)
+    r.add_argument("--expected-selector-sha256", required=True)
+    r.add_argument("--retained-selector", required=True, nargs=2, metavar=("FILE", "SHA256"))
+    r.add_argument("--profile", required=True, nargs=2, metavar=("FILE", "SHA256"))
     c = sub.add_parser("check")
     c.add_argument("--selector", required=True, type=Path)
     c.add_argument("--launcher", required=True, type=Path)
@@ -1930,12 +2235,12 @@ def main():
     r.add_argument("--receipt", required=True, type=Path)
     args = p.parse_args()
     try:
-        result = {"build": build, "register-browser": stage_browser_registration, "install": install, "rollback": rollback,
+        result = {"build": build, "restore-retained-owner": stage_retained_owner_restore, "register-browser": stage_browser_registration, "install": install, "rollback": rollback,
                   "check": lambda a: (check_candidate(a.selector, a.launcher) if a.staged_profiles
                                       else check_selector(a.selector, a.launcher))}[args.command](args)
         print(json.dumps(result, sort_keys=True))
         return 0
-    except (OSError, ValueError, KeyError, RuntimeError, subprocess.SubprocessError) as e:
+    except (OSError, ValueError, KeyError, RuntimeError, sqlite3.DatabaseError, subprocess.SubprocessError) as e:
         print(json.dumps({"status": "failed", "error_type": type(e).__name__, "error": str(e)}), file=sys.stderr)
         return 1
 
