@@ -100,7 +100,7 @@ def activate(connection, bearer):
 
 
 def main():
-    connection = http.client.HTTPConnection("127.0.0.1", 9001, timeout=7)
+    connection = http.client.HTTPConnection("127.0.0.1", 9001, timeout=17)
     try:
         activate(connection, read_bearer(ENV_FILE))
     except ReadinessFailure as reason:
