@@ -20,6 +20,24 @@ rollout = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(rollout)
 
 
+class InstallBoundaryTests(unittest.TestCase):
+    def test_controller_refuses_empty_remote_install_before_pack(self):
+        sha = "2" * 40
+        with tempfile.TemporaryDirectory() as catalog:
+            (Path(catalog) / "releases" / sha).mkdir(parents=True)
+            argv = ["rollout-candidate.py", "--sha", sha, "--node", LINUX_NODE["id"],
+                    "--catalog", catalog, "--release-proof", "unused-fixture"]
+            with (patch.object(sys, "argv", argv),
+                  patch.object(rollout, "load_nodes", return_value={"nodes": [LINUX_NODE]}),
+                  patch.object(rollout, "validate_release_manifest",
+                               return_value={"manifest": {}, "bundle_fingerprint": "fixture"}),
+                  patch.object(rollout, "remote_live_sha", return_value=""),
+                  patch.object(rollout, "pack_release", side_effect=AssertionError("rollout reached packing")) as pack):
+                with self.assertRaisesRegex(RuntimeError, "legacy_remote_rollout_requires_existing_verified_release"):
+                    rollout.main()
+                pack.assert_not_called()
+
+
 class FakeGate:
     def __init__(self):
         self.expired = False

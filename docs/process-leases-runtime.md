@@ -265,6 +265,23 @@ Omit the adapter-update flags for a core-only candidate. Existing scriptless bro
 
 Inspect the resulting node, store identities, administrator list, component ancestry, exact profile transition and retained pins. Retain the base_selector_sha256 literal from the build receipt. A changed selector or profile requires new review and a new candidate.
 
+### Add a remote Codex instance
+
+Bootstrap a fresh authority on the central host with the installed
+`ahap-owner-bootstrap`. Pin a private operator binding outside the output
+bundle. Its `authority_seed` contains the absolute `path` and `sha256` of the
+bootstrap seed. Its `wrapper` contains `node`, `instance`, `kind=codex`,
+`script`, `script_sha256` and `config_sha256`. The wrapper companion
+`<script>.json` selects the remote native executor and pins its runner.
+
+Run `process-leases-candidate.py register-remote-codex` with the current
+`--selector`, `--launcher`, `--expected-selector-sha256`, a fresh `--output`
+and `--remote-binding FILE SHA256`. The staged selector preserves the current
+profile order and appends one instance. Use the held rollout below, then
+verify the new instance and an exact native-session read through the central
+MCP. Rollback restores the prior selector and retains the new authority files
+for inspection.
+
 A native runtime inspect is read-only:
 
 ~~~sh
