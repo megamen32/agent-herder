@@ -8,7 +8,7 @@ StartLimitBurst=7
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/python3 -IB /usr/local/libexec/agent-herder-native-owner-boot.py
-TimeoutStartSec=18
+TimeoutStartSec=60
 Restart=on-failure
 RestartSec=10
 NoNewPrivileges=yes

@@ -8,6 +8,7 @@ from pathlib import Path
 import shlex
 import stat
 import sys
+import time
 
 
 ENV_FILE = Path("/etc/gptadmin/nodes/primary.env")
@@ -43,6 +44,10 @@ class ReadinessFailure(ValueError):
     """Only local method names, numeric statuses and fixed reason codes may be logged."""
 
 
+class ChildStarting(ReadinessFailure):
+    """The catalog route can become ready during this boot attempt."""
+
+
 def activate(connection, bearer):
     headers = {"Authorization": "Bearer " + bearer, "Content-Type": "application/json",
                "Accept": "application/json, text/event-stream"}
@@ -56,6 +61,8 @@ def activate(connection, bearer):
         if session_id := response.getheader("Mcp-Session-Id"):
             headers["Mcp-Session-Id"] = session_id
         body = response.read(MAX_RESPONSE_BYTES + 1)
+        if response.status in (502, 503, 504):
+            raise ChildStarting(f"{method} unavailable (HTTP {response.status})")
         if response.status not in (200, 202, 204) or len(body) > MAX_RESPONSE_BYTES:
             raise ReadinessFailure(f"{method} refused or exceeded the read limit (HTTP {response.status})")
         if request_id is None:
@@ -88,29 +95,37 @@ def activate(connection, bearer):
     }}, 2)
     execution = lookup.get("structuredContent")
     if lookup.get("isError") or not isinstance(execution, dict) or execution.get("status") != "completed":
-        raise ReadinessFailure("registered MCP catalog lookup did not complete")
+        raise ChildStarting("registered MCP catalog lookup did not complete")
     catalog = execution.get("result")
     if not isinstance(catalog, dict) or catalog.get("schema_complete") is not True:
-        raise ReadinessFailure("registered MCP catalog lookup returned an incomplete schema")
+        raise ChildStarting("registered MCP catalog lookup returned an incomplete schema")
     names = catalog.get("tool_names")
     if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
         raise ReadinessFailure("registered MCP catalog lookup returned invalid tool names")
     if not {"discover", "session", "stop"} <= set(names):
-        raise ReadinessFailure("registered MCP catalog is missing required Rust tools")
+        raise ChildStarting("registered MCP catalog is missing required Rust tools")
 
 
 def main():
-    connection = http.client.HTTPConnection("127.0.0.1", 9001, timeout=17)
     try:
-        activate(connection, read_bearer(ENV_FILE))
+        bearer = read_bearer(ENV_FILE)
+        for attempt in range(3):
+            connection = http.client.HTTPConnection("127.0.0.1", 9001, timeout=17)
+            try:
+                activate(connection, bearer)
+                break
+            except (ChildStarting, OSError, http.client.HTTPException):
+                if attempt == 2:
+                    raise
+            finally:
+                connection.close()
+            time.sleep(2 ** attempt)
     except ReadinessFailure as reason:
         print(f"Registered Agent Herder MCP is not ready: {reason}", file=sys.stderr)
         return 1
     except (OSError, ValueError, KeyError, TypeError, AttributeError, http.client.HTTPException):
         print("Registered Agent Herder MCP is not ready", file=sys.stderr)
         return 1
-    finally:
-        connection.close()
     print("Registered Agent Herder MCP is ready")
     return 0
 

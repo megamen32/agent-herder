@@ -386,6 +386,37 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly processArgs: string[];
   private readonly cwd: string;
   private readonly socketPath?: string;
+  // One entry per observation shape (model catalog, full inventory, or a bounded
+  // page of 1..100 threads). Never share a result between transport generations.
+  private readonly polls = new Map<string, { result: Promise<unknown>; next: number; failures: number }>();
+
+  private poll<T>(key: string, interval: number, load: () => Promise<T>): Promise<T> {
+    const previous = this.polls.get(key);
+    const delay = Math.max(0, (previous?.next ?? 0) - Date.now());
+    if (previous && delay > 0 && (delay === Infinity || previous.failures || key === "models")) {
+      return previous.result as Promise<T>;
+    }
+    // A completed thread observation must not acquire a new freshness receipt.
+    // Pace the next real read and let concurrent observers share that read.
+    const generation = this.transportGeneration;
+    const result = Promise.resolve().then(async () => {
+      if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
+      this.assertLifecycleActive();
+      if (generation !== this.transportGeneration) throw new Error("Codex observation transport changed");
+      return load();
+    });
+    const entry = { result, next: Infinity, failures: previous?.failures ?? 0 };
+    this.polls.set(key, entry);
+    entry.result.then(() => {
+      entry.failures = 0;
+      entry.next = Date.now() + interval;
+    }, () => {
+      entry.failures = Math.min(6, entry.failures + 1);
+      entry.next = Date.now() + Math.min(30_000, 1000 * 2 ** (entry.failures - 1));
+    });
+    return entry.result;
+  }
+
   private readonly modelIds: string[];
   private readonly appServerDataHome: string;
   private readonly transcriptReaderDataHome: string;
@@ -769,7 +800,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         const threadListDeadlineMs = Number.isFinite(requestedThreadListDeadlineMs) && requestedThreadListDeadlineMs >= 500 ? requestedThreadListDeadlineMs : 5000;
         let page: {data?: CodexThread[]; nextCursor?: string | null} | undefined;
         try {
-          page = await this.request("thread/list", {limit, archived:false, sortKey:"updated_at", sortDirection:"desc"}, "thread/list", threadListDeadlineMs) as {data?:CodexThread[];nextCursor?:string|null};
+          page = await this.poll(`threads:${limit}`, 1000, () => this.request("thread/list", {limit, archived:false, sortKey:"updated_at", sortDirection:"desc"}, "thread/list", threadListDeadlineMs)) as {data?:CodexThread[];nextCursor?:string|null};
         } catch (error) {
           if (!(error instanceof Error && error.message.startsWith("Codex app-server timed out during"))) throw error;
           const fallback = await this.rawTranscriptAdapter.listSessions();
@@ -789,7 +820,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         bounded ||= indexed.limited;
         let loadedIds: string[] = [];
         try {
-          const loaded = await this.request("thread/loaded/list", {limit}) as {data?:unknown[];nextCursor?:string|null};
+          const loaded = await this.poll(`loaded:${limit}`, 1000, () => this.request("thread/loaded/list", {limit})) as {data?:unknown[];nextCursor?:string|null};
           if (!Array.isArray(loaded.data) || loaded.data.some(id => typeof id !== "string" || !id || id.length > 512 || /[\x00-\x1f\x7f]/.test(id))) throw new Error("invalid loaded IDs");
           loadedIds = loaded.data as string[];
           bounded ||= Boolean(loaded.nextCursor) || loadedIds.length > limit;
@@ -813,7 +844,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         bounded ||= sorted.length > limit;
         sessions = sorted.slice(0, limit);
       } else {
-        const full = await this.listAllThreads();
+        const full = await this.poll("threads:full", 1000, () => this.listAllThreads());
         sessions = full.threads;
         candidatePartial = full.partial;
       }
@@ -2313,6 +2344,10 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     // same native client that will execute the selected model, not old constants.
     if (this.modelIds.length) return [...this.modelIds];
     await this.ensureReady();
+    return [...await this.poll("models", 30_000, () => this.readModelCatalog())];
+  }
+
+  private async readModelCatalog(): Promise<string[]> {
     const rows: Array<{model: string; isDefault: boolean}> = [];
     const cursors = new Set<string>();
     let cursor: string | undefined;
@@ -3062,6 +3097,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
 
   private beginTransportGeneration(): void {
     this.transportGeneration++;
+    this.polls.clear();
     this.trustedAdmission.forget();
     this.invalidateOwnedPermissionThreads();
   }

@@ -156,8 +156,12 @@ describe("Codex app-server adapter", () => {
     const adapter = new CodexAppServerAdapter({ quotaReader: async () => ({rateLimits:{primary:{usedPercent:0}}}), codexBin: process.execPath, cwd: root });
     const { internals } = stubScopedCollectionReads(adapter, { root, ready: true, listedThreads: [] });
     const originalRequest = internals.request;
+    let attempts = 0;
     internals.request = async (method: string, params?: Record<string, unknown>) => {
-      if (method === "thread/list") throw new Error("Codex app-server timed out during thread/list");
+      if (method === "thread/list") {
+        attempts++;
+        throw new Error("Codex app-server timed out during thread/list");
+      }
       return originalRequest(method, params);
     };
     internals.rawTranscriptAdapter.listSessions = async () => [
@@ -167,6 +171,8 @@ describe("Codex app-server adapter", () => {
     ];
     try {
       await expect(adapter.listSessions({ limit: 2 })).resolves.toMatchObject([{ id: "index-a" }, { id: "index-b" }]);
+      await expect(adapter.listSessions({ limit: 2 })).resolves.toHaveLength(2);
+      expect(attempts).toBe(1);
       const receipt = adapter.getSessionSnapshotReceipt();
       expect(receipt.reason).toBe("app_server_thread_list_deadline");
       expect(receipt.exhaustive).toBe(false);

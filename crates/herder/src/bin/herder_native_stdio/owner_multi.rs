@@ -273,16 +273,22 @@ impl ServerHandler for MultiOwner {
         let mut complete = true;
         let mut total_hits = 0u64;
         let mut has_more = false;
-        for binding in &self.bindings {
-            if node.is_some_and(|node| node != binding.instance.node.0) { continue; }
-            let result = binding.server.call_tool(request.clone(), ctx.clone()).await?;
+        let reads = self.bindings.iter()
+            .filter(|binding| node.is_none_or(|node| node == binding.instance.node.0))
+            .map(|binding| {
+                let call = binding.server.call_tool(request.clone(), ctx.clone());
+                async move { (binding, call.await) }
+            });
+        for (binding, result) in futures_util::future::join_all(reads).await {
+            let result = result?;
             let CallToolResponse::Complete(result) = result else { return Err(unavailable()); };
             if result.is_error == Some(true) {
-                let unavailable_session_source = field == "sessions"
-                    && result.structured_content.as_ref()
-                        .and_then(|error| error.get("code"))
-                        .and_then(Value::as_str) == Some("source_unavailable");
-                if !binding.adapter_available || unavailable_session_source {
+                let code = result.structured_content.as_ref()
+                    .and_then(|error| error.get("code")).and_then(Value::as_str);
+                let unavailable = matches!(code, Some("node_busy" | "owner_busy" |
+                    "owner_read_timeout" | "owner_read_cooling_down"))
+                    || (field == "sessions" && code == Some("source_unavailable"));
+                if !binding.adapter_available || unavailable {
                     complete = false;
                     sources.push(json!({"instance_ref":binding.instance.instance_id,"error":result.structured_content}));
                     continue;
@@ -357,8 +363,13 @@ pub async fn serve(profiles: Vec<OpenedOwner>) -> Result<(), Box<dyn std::error:
     // Join every startup before propagating a static configuration failure.
     let results = futures_util::future::join_all(pending).await;
     let mut bindings = Vec::with_capacity(results.len());
+    let mut nodes = std::collections::HashMap::new();
     for result in results {
-        bindings.push(result??);
+        let mut binding = result??;
+        let slots = nodes.entry(canonical_host_id(&binding.instance.node.0).to_owned())
+            .or_insert_with(|| Arc::new(tokio::sync::Semaphore::new(8)));
+        binding.server.set_node_slots(slots.clone());
+        bindings.push(binding);
     }
     registry.configure(bindings.iter().map(|b|b.source.clone()).collect())?;
     herder::application::scoped_stop::automation_driver::start(bindings.iter().map(BoundOwner::driver_owner).collect())?;

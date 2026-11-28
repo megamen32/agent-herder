@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "deploy/fleet/agent-herder-native-owner-boot.py"
@@ -34,6 +34,31 @@ def catalog_reply(*names, complete=True, status="completed", is_error=False):
 
 
 class NativeOwnerBootTest(unittest.TestCase):
+    def test_late_child_becomes_ready_on_fresh_connection(self):
+        cold, ready = Mock(), Mock()
+        cold.getresponse.side_effect = handshake_responses() + [
+            response(200, catalog_reply(complete=False))]
+        ready.getresponse.side_effect = handshake_responses() + [
+            response(200, catalog_reply("discover", "session", "stop"))]
+        with patch.object(boot, "read_bearer", return_value="fixture"), \
+             patch.object(boot.http.client, "HTTPConnection", side_effect=[cold, ready]), \
+             patch("time.sleep"):
+            self.assertEqual(boot.main(), 0)
+        cold.close.assert_called_once()
+        ready.close.assert_called_once()
+
+    def test_denied_boot_does_not_retry_and_cold_boot_stops_after_three_attempts(self):
+        for status, expected in [(403, 1), (503, 3)]:
+            with self.subTest(status=status):
+                connection = Mock()
+                connection.getresponse.return_value = response(status)
+                with patch.object(boot, "read_bearer", return_value="fixture"), \
+                     patch.object(boot.http.client, "HTTPConnection", return_value=connection), \
+                     patch("time.sleep") as sleep:
+                    self.assertEqual(boot.main(), 1)
+                self.assertEqual(connection.close.call_count, expected)
+                self.assertEqual(sleep.call_count, expected - 1)
+
     def test_activate_uses_registered_control_lookup_through_root_mcp(self):
         # A quorum follower can own the process while its scoped child catalog is absent.
         connection = Mock()
