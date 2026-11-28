@@ -109,14 +109,17 @@ export const SendMessageSchema = z.object({
 });
 
 const NamedSessionBaseSchema = z.object({
-  sourceSessions: z.array(z.object({ harness: z.enum(["codex", "zcode", "opencode", "fast-agent"]), sessionId: z.string().min(1).max(512) })).max(32).optional().describe("All verified native source/ancestor receipts for an automatic continuation. Any stopped source prohibits launch."),
+  sourceSessions: z.array(z.object({ harness: z.enum(["codex", "claude", "zcode", "opencode", "fast-agent"]), sessionId: z.string().min(1).max(512) })).max(32).optional().describe("All verified native source/ancestor receipts for an automatic continuation. Any stopped source prohibits launch."),
   sourceSessionId: z.string().min(1).optional().describe("Original session ID when this creation is a continuation/replacement; a stopped source prohibits automatic creation."),
-  sourceHarness: z.enum(["codex", "zcode", "opencode", "fast-agent"]).optional(),
-  harness: z.enum(["opencode", "codex", "zcode", "fast-agent", "chatgpt", "zai", "browser-chat"]).describe("Harness that owns the named session."),
+  sourceHarness: z.enum(["codex", "claude", "zcode", "opencode", "fast-agent"]).optional(),
+  harness: z.enum(["opencode", "claude", "codex", "zcode", "fast-agent", "chatgpt", "zai", "browser-chat"]).describe("Harness that owns the named session."),
   name: z.string().trim().min(1).max(128).describe("Stable session name, for example repair_100."),
   cwd: z.string().min(1).describe("Absolute working directory. It is canonicalized before identity matching."),
   hostId: hostTarget(HOST_TARGET_DESCRIPTION),
   model: z.string().trim().min(1).max(MAX_MODEL_LENGTH).regex(/^[^\u0000-\u001f\u007f]*$/).optional().describe("Optional model selected before the first message is delivered."),
+  effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional().describe("Claude reasoning effort."),
+  thinkingBudget: z.number().int().min(0).max(128000).optional().describe("Claude thinking token budget; zero disables thinking. Model support varies."),
+  permissionMode: z.enum(["default", "plan", "acceptEdits", "dontAsk"]).optional().describe("Claude tool permission mode."),
   serviceTier: z.enum(["normal", "fast"]).optional().describe("Codex only. Applies only if a new session is created; defaults to normal and never changes an existing named session."),
 });
 
@@ -136,9 +139,9 @@ export const NewOrResumeSchema = NamedSessionBaseSchema.extend({
 export const DeliverSchema = z.object({
   attachments: z.never().optional().describe("Inline files require an exact target and sender."),
   inputId: z.string().min(1).max(256).optional().describe("Stable delivery ID. Retry with the same ID; Codex deduplicates native admission for 24 hours."),
-  sourceSessions: z.array(z.object({ harness: z.enum(["codex", "zcode", "opencode", "fast-agent"]), sessionId: z.string().min(1).max(512) })).max(32).optional(),
+  sourceSessions: z.array(z.object({ harness: z.enum(["codex", "claude", "zcode", "opencode", "fast-agent"]), sessionId: z.string().min(1).max(512) })).max(32).optional(),
   sourceSessionId: z.string().min(1).max(512).optional().describe("Original native ID for an automatic continuation/replacement; stopped sources prohibit it."),
-  sourceHarness: z.enum(["codex", "zcode", "opencode", "fast-agent"]).optional(),
+  sourceHarness: z.enum(["codex", "claude", "zcode", "opencode", "fast-agent"]).optional(),
   sessionId: z.string().optional().describe("Exact target session ID. Use either sessionId or harness+name+cwd."),
   harness: z.enum(["opencode", "claude", "codex", "qoder", "hermes", "zcode", "fast-agent", "chatgpt", "zai", "minimax-code", "browser-chat"]).optional(),
   hostId: hostTarget(HOST_TARGET_DESCRIPTION),
@@ -308,15 +311,18 @@ export const toolDefinitions: Tool[] = [
   },
   {
     name: "create_session",
-    description: "Create one named OpenCode, Codex, ZCode, or Fast Agent session in an absolute canonical working directory.",
+    description: "Create one named Claude, OpenCode, Codex, ZCode, or Fast Agent session in an absolute canonical working directory.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        harness: { type: "string", enum: ["opencode", "codex", "zcode", "fast-agent"], description: "Target harness" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "zcode", "fast-agent"], description: "Target harness" },
         name: { type: "string", description: "Stable session name, for example repair_100" },
         cwd: { type: "string", description: "Absolute working directory" },
         hostId: { type: "string", description: "Machine the work runs on; defaults to localhost (this Agent Herder host)" },
         model: { type: "string", maxLength: MAX_MODEL_LENGTH, description: "Optional model selected before first delivery" },
+        effort: { type: "string", enum: ["low", "medium", "high", "xhigh", "max"], description: "Claude reasoning effort" },
+        thinkingBudget: { type: "integer", minimum: 0, maximum: 128000, description: "Claude thinking budget in tokens" },
+        permissionMode: { type: "string", enum: ["default", "plan", "acceptEdits", "dontAsk"], description: "Claude permission mode" },
       },
       required: ["harness", "name", "cwd"],
     },
@@ -327,13 +333,16 @@ export const toolDefinitions: Tool[] = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        harness: { type: "string", enum: ["opencode", "codex", "zcode", "fast-agent"], description: "Target harness" },
+        harness: { type: "string", enum: ["opencode", "claude", "codex", "zcode", "fast-agent"], description: "Target harness" },
         name: { type: "string", description: "Stable session name, for example repair_100" },
         cwd: { type: "string", description: "Absolute working directory" },
         hostId: { type: "string", description: "Machine the work runs on; defaults to localhost (this Agent Herder host)" },
         message: { type: "string", description: "Message to deliver" },
         mode: { type: "string", enum: ["queue", "sync"], default: "sync", description: "Delivery mode" },
         model: { type: "string", maxLength: MAX_MODEL_LENGTH, description: "Optional model selected before first delivery" },
+        effort: { type: "string", enum: ["low", "medium", "high", "xhigh", "max"], description: "Claude reasoning effort" },
+        thinkingBudget: { type: "integer", minimum: 0, maximum: 128000, description: "Claude thinking budget in tokens" },
+        permissionMode: { type: "string", enum: ["default", "plan", "acceptEdits", "dontAsk"], description: "Claude permission mode" },
         fallbackModels: { type: "array", maxItems: 8, items: { type: "string", maxLength: MAX_MODEL_LENGTH }, description: "Optional ordered same-harness fallbacks; if omitted, OpenCode GLM 5.3 Flash defaults to MiniMax M3.1 Flash. Used only after a definite pre-admission HTTP 429 or provider quota rejection." },
       },
       required: ["harness", "name", "cwd", "message"],

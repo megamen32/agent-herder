@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { dirname, isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
 import lockfile from "proper-lockfile";
-import type { AgentSession, CodexServiceTier, HarnessAdapter } from "./types/index.js";
+import type { AgentSession, ClaudeCreateSettings, CodexServiceTier, HarnessAdapter } from "./types/index.js";
 import { coordinationNotes } from "./coordination-notes.js";
 import { deferredMessages, isBusyCodexWriter, parkForDelivery, withDeferred } from "./deferred-messages.js";
 import { getHumanStopStore } from "./human-stop-store.js";
@@ -23,7 +23,7 @@ import { resolveAutopilotStateDir } from "./autopilot/state-dir.js";
 
 export type NamedSessionMode = "queue" | "sync";
 
-export interface NamedSessionRequest {
+export interface NamedSessionRequest extends ClaudeCreateSettings {
   healthRecovery?: boolean;
   requireSourceHostId?: boolean;
   sourceSessions?: Array<{ harness: string; sessionId: string; hostId?: string }>;
@@ -325,14 +325,27 @@ export async function createNamedSession(
     } catch (error) {
       return failed(normalized, (error as Error).message);
     }
+    if (matches.length === 1 && normalized.harness === "claude") {
+      const existing = await adapter.getSession(matches[0].id);
+      if (existing) {
+        const settings = existing.meta?.requestedSettings as (ClaudeCreateSettings & { model?: string }) | undefined;
+        for (const key of ["model", "effort", "thinkingBudget", "permissionMode"] as const) {
+          if (request[key] !== undefined && settings?.[key] !== request[key]) {
+            return failed(normalized, `Named Claude session exists with a different or unverified ${key}`, "not_attempted");
+          }
+        }
+        return { ...normalized, ok: true, created: false, sessionId: existing.id, model: existing.model,
+          ready: existing.meta?.ready, effectiveSettings: existing.meta?.effectiveSettings };
+      }
+    }
     if (matches.length > 0) {
       return failed(normalized, `Named session '${normalized.name}' already exists for ${normalized.harness}:${normalized.cwd}`);
     }
     try {
       if (await sourceHeldNow(request)) return failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted");
-      const session = await adapter.createSession({ name: request.displayTitle || normalized.name, cwd: normalized.cwd, model: request.model, serviceTier: request.serviceTier, fullAccess: true, healthRecovery: request.healthRecovery });
+      const session = await adapter.createSession({ name: request.displayTitle || normalized.name, cwd: normalized.cwd, model: request.model, serviceTier: request.serviceTier, effort: request.effort, thinkingBudget: request.thinkingBudget, permissionMode: request.permissionMode, fullAccess: true, healthRecovery: request.healthRecovery });
       await rememberNamedSession(adapter, normalized.name, normalized.cwd, session);
-      return { ok: true, created: true, sessionId: session.id, model: request.model, ...normalized, ...createdCodexServiceTierResult(session, request.serviceTier) };
+      return { ok: true, created: true, sessionId: session.id, model: session.model ?? request.model, ...(normalized.harness === "claude" && { ready: session.meta?.ready, effectiveSettings: session.meta?.effectiveSettings }), ...normalized, ...createdCodexServiceTierResult(session, request.serviceTier) };
     } catch (error) {
       return projectCreatedUnverified(normalized, error) ?? failed(normalized, (error as Error).message);
     }
@@ -385,7 +398,7 @@ export async function newOrResumeNamedSession(
       if (await getHumanStopStore().findHeldNamed(normalized.harness, normalized.name, normalized.cwd)) return { kind: "error", result: failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted") };
       try {
         if (await sourceHeldNow(request)) return { kind: "error", result: failed(normalized, HUMAN_STOP_MESSAGE, "not_attempted") };
-        target = await adapter.createSession({ name: request.displayTitle || normalized.name, cwd: normalized.cwd, model: request.model, serviceTier: request.serviceTier, fullAccess: true, healthRecovery: request.healthRecovery });
+        target = await adapter.createSession({ name: request.displayTitle || normalized.name, cwd: normalized.cwd, model: request.model, serviceTier: request.serviceTier, effort: request.effort, thinkingBudget: request.thinkingBudget, permissionMode: request.permissionMode, fullAccess: true, healthRecovery: request.healthRecovery });
         await rememberNamedSession(adapter, normalized.name, normalized.cwd, target);
         created = true;
       } catch (error) {
@@ -657,6 +670,7 @@ async function rememberNamedSession(adapter: HarnessAdapter, name: string, cwd: 
 async function normalize(request: NamedSessionRequest): Promise<NamedSessionRequest> {
   const harness = request.harness.trim();
   const name = request.name.trim();
+  if (harness !== "claude" && (request.effort || request.thinkingBudget !== undefined || request.permissionMode)) throw new Error("Claude settings require the claude harness");
   if (!harness) throw new Error("harness must be a non-empty string");
   if (!name) throw new Error("name must be a non-empty string");
   if (!isAbsolute(request.cwd)) throw new Error("cwd must be an absolute path");

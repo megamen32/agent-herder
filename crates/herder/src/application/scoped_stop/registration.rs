@@ -162,7 +162,7 @@ pub fn membership_source_for_harness(
     session: &SessionRef,
     harness: &str,
 ) -> rusqlite::Result<Option<&'static str>> {
-    if !matches!(harness, "codex" | "opencode" | "zcode" | "chatgpt" | "zai") {
+    if !matches!(harness, "codex" | "opencode" | "zcode" | "claude" | "chatgpt" | "zai") {
         return Ok(None);
     }
     membership_source_inner(db, principal, instance, generation, session, Some(harness))
@@ -293,7 +293,7 @@ fn membership_source_inner(
                         && proof.authority_generation == generation
                         && matches!(
                             proof.harness.as_str(),
-                            "codex" | "opencode" | "zcode" | "chatgpt" | "zai"
+                            "codex" | "opencode" | "zcode" | "claude" | "chatgpt" | "zai"
                         )
                         && validate_workspace(proof.workspace.as_ref()).is_ok()
                         && registration_payload(
@@ -598,7 +598,7 @@ impl ScopedAuthority {
         ]
         .into_iter()
         .any(|s| !valid(s))
-            || !matches!(harness, "codex" | "opencode" | "zcode" | "chatgpt" | "zai")
+            || !matches!(harness, "codex" | "opencode" | "zcode" | "claude" | "chatgpt" | "zai")
         {
             return Err(RegistrationError::InvalidInput);
         }

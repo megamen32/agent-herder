@@ -128,7 +128,6 @@ export function createCanonicalResumeTransport(options: CanonicalResumeTransport
       const retained = await readRetainedResumeReceipts(authority);
       const previous = Object.hasOwn(retained.records, request.idempotency_key) ? retained.records[request.idempotency_key] : undefined;
       if (previous) return retainedResumeReceipt(previous, request);
-      if (request.target.agent === "claude") return outcome(request, "rejected", "harness_disabled");
       const nativeId = request.target.agent === "hermes" ? request.target.locator.session_key : request.target.session_id;
       const target = await authority.resolveNative(request.target.agent, nativeId);
       const key = canonicalResumeKey(request.idempotency_key);

@@ -123,6 +123,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
   }
 
   async createSession(options: CreateSessionOptions): Promise<AgentSession> {
+    if (options.effort || options.thinkingBudget !== undefined || options.permissionMode) throw new Error("Claude creation settings require ENABLE_CLAUDE_SDK");
     const id = randomUUID();
     const cwd = resolve(options.cwd);
     const args = [
@@ -246,6 +247,33 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
       source: { kind: "native-file", location: filePath, format: "jsonl" },
       timestampCoverage: "native",
     };
+  }
+
+  /** Only a bounded native tail is needed to monitor a closed session. */
+  async readProgress(id: string) {
+    const file = await this.findSessionFile(id);
+    if (!file) return {};
+    const handle = await open(file, "r");
+    let lastTool: string | undefined;
+    let lastAssistantLine: string | undefined;
+    try {
+      const { size } = await handle.stat();
+      const tail = Buffer.alloc(Math.min(size, 65536));
+      const { bytesRead } = await handle.read(tail, 0, tail.length, size - tail.length);
+      for (const line of tail.toString("utf8", 0, bytesRead).split("\n")) {
+        try {
+          const entry = JSON.parse(line);
+          if (entry.type !== "assistant" || !Array.isArray(entry.message?.content)) continue;
+          for (const block of entry.message.content) {
+            if (block.type === "tool_use" && typeof block.name === "string") lastTool = block.name;
+            if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
+              lastAssistantLine = block.text.trim().split(/\r?\n/).at(-1)?.slice(0, 240);
+            }
+          }
+        } catch { /* A tail can begin mid-record. */ }
+      }
+    } finally { await handle.close(); }
+    return { lastTool, lastAssistantLine };
   }
 
   // ---- Internal helpers ----
@@ -490,6 +518,7 @@ export class ClaudeCodeAdapter implements HarnessAdapter {
   }
 
   private async findSessionFile(id: string): Promise<string | null> {
+    if (!id || /[\\/\x00]/.test(id)) return null;
     const projectsDir = join(this.claudeDir, "projects");
     try {
       for (const hash of await readdir(projectsDir)) {

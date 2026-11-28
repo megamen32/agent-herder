@@ -6,9 +6,10 @@ use crate::{
 use serde_json::{Value, json};
 
 impl AhapOpenCode {
-    /// Only the two configured native browser runners advertise this operation.
+    /// A native runner must guard cancellation by the admitted input identity.
     pub fn supports_browser_interrupt(&self) -> bool {
-        self.native_browser()
+        (self.native_browser() || (self.policy.harness == "claude"
+            && self.capabilities()["nativeProtocol"].as_str() == Some("claude-agent-sdk")))
             && self
                 .capabilities()
                 .pointer("/controlCapabilities/cancelTurn")

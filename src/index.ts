@@ -1512,6 +1512,8 @@ async function main() {
     userMessageDelivery.close();
     void (async () => {
       await installedLocalRecovery?.close().catch(() => undefined);
+      const claude = adapters.get("claude");
+      if (claude instanceof ClaudeSDKAdapter) await claude.dispose().catch(() => undefined);
       const zcode = adapters.get('zcode') as ZcodeAdapter | undefined;
       try { await integratorFleetRuntime.dispose(); }
       catch (error) { console.error('[agent-herder] scoped Codex shutdown failed:', String(error)); }

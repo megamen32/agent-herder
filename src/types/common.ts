@@ -334,7 +334,13 @@ export interface MessageAdmissionResult {
 
 export type CodexServiceTier = "normal" | "fast";
 
-export interface CreateSessionOptions {
+export interface ClaudeCreateSettings {
+  effort?: "low" | "medium" | "high" | "xhigh" | "max";
+  thinkingBudget?: number;
+  permissionMode?: "default" | "plan" | "acceptEdits" | "dontAsk";
+}
+
+export interface CreateSessionOptions extends ClaudeCreateSettings {
   /** Dedicated bounded health recovery worker, never a general chat. */
   healthRecovery?: boolean;
   /** Stable human-readable identity within a harness and canonical CWD. */
