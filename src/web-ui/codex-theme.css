@@ -1,47 +1,33 @@
-/* Codex-подобный плоский холст в двух темах.
-   Тёмная — по умолчанию. Палитра снята пиксельно с docs/reference/codex-ui-reference-light.png:
-   холст #282a36, левый сайдбар #2c2c38, шапка #31313b, карточки инспектора #3e3e4a,
-   композер #474751, пузырь человека #323440, текст #f2f2f7 / #b9b9c3 / #a2a2aa.
-   Светлая — палитра, собранная ранее: белый холст, #1c1c1e, синий акцент #1f5fd0.
-   Ни одна структура, класс-селектор функционального блока или aria-атрибут здесь не удаляется:
-   файл меняет только вид, обе темы читают один и тот же набор переменных. */
-
+/* Shared workspace palette. Light mode uses the same semantic tokens. */
 :root {
   color-scheme: dark;
-  /* фоны: холст не чёрный, панели светлее идут по восходящей */
-  --bg: #282a36;
-  --surface-1: #2c2c38;
-  --surface-2: #31313b;
-  --surface-3: #3e3e4a;
-  --surface-4: #474751;
+  --bg: #121315;
+  --surface-1: #18191c;
+  --surface-2: #202125;
+  --surface-3: #25262a;
+  --surface-4: #2a2b30;
   --surface-hover: rgba(255, 255, 255, .06);
   --panel: var(--surface-3);
   --panel-strong: var(--surface-4);
-  /* пузырь человека — тот же тёмный холст, но на полтона светлее фона */
-  --bubble: #323440;
-  /* текст: светлый основной, два приглушённых уровня под ним */
-  --text: #f2f2f7;
-  --text-2: #b9b9c3;
-  --muted: #a2a2aa;
-  /* границы тонкие, без тяжёлых рамок */
-  --border: #33333f;
-  --border-2: #3d3d4a;
-  /* акцент читаемый на тёмном */
-  --accent: #bd93f9;
-  --accent-strong: #a97ef0;
-  --accent-soft: rgba(189, 147, 249, .16);
-  --on-accent: #282a36;
-  /* отправка — светлая кнопка, как в Codex */
+  --bubble: #202428;
+  --text: #eceef0;
+  --text-2: #c2c5c9;
+  --muted: #999da5;
+  --border: #303135;
+  --border-2: #45474d;
+  --accent: #93ccb9;
+  --accent-strong: #a7dfcd;
+  --accent-soft: rgba(147, 204, 185, .12);
+  --on-accent: #121315;
   --send-bg: #f4f4f2;
-  --send-fg: #282a36;
-  /* статусы, снятые с цветных пикселей референса */
-  --status-running: #e8c25a;
-  --status-waiting: #d68a5f;
+  --send-fg: #121315;
+  --status-running: #80c5a6;
+  --status-waiting: #e1b774;
   --status-error: #e0657c;
   --status-idle: #8a8a92;
   --status-stopped: #7d7d89;
   --status-done: #5fd98c;
-  --shadow-menu: 0 16px 40px rgba(0, 0, 0, .5);
+  --shadow-menu: 0 4px 16px rgba(0, 0, 0, .16);
   --header-h: 56px;
   --radius-l: 18px;
   --radius-m: 10px;
