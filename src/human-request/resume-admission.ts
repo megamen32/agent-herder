@@ -172,6 +172,9 @@ export function continuationPrompt(record: HumanRequestRecord, canonicalResultRe
   // Only a request created through the question-binding seam has a Notice
   // question row. Anything else must not send the session after a card that
   // does not exist.
+  if(record.kind==="user" && record.decisionKey){
+    return `Human decision ${record.requestId} answered. Read human_request({action:"get",requestId:"${record.requestId}",includeAnswer:true}) and apply the answer in this session.`;
+  }
   if (record.answerSource === "notice_question") {
     return [
       `Human Request ${record.requestId} is answered; continue the same task on this exact session.`,

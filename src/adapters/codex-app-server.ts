@@ -1,3 +1,5 @@
+import type { CodexTurnState } from "../session-completion.js";
+import { chooseSettings, classifyTask, type ModelCapability, type TaskOptions } from "../effort-tier-policy.js";
 import { readCodexActiveRuntime, type CodexActiveReceipt } from "./codex-active-runtime.js";
 import { terminalQuotaFailure, type TerminalQuotaFailure } from "./quota-failure.js";
 import { execFile, type ChildProcessWithoutNullStreams } from "node:child_process";
@@ -6,7 +8,7 @@ import { promisify } from "node:util";
 import { isAbsolute, join, resolve } from "node:path";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { assertCodexQuota, codexQuotaExemptModel, CodexQuotaBlockedError, type QuotaReader } from "../codex-quota-guard.js";
+import { checkCodexQuota, assertCodexQuota, codexQuotaExemptModel, CodexQuotaBlockedError, type QuotaReader } from "../codex-quota-guard.js";
 import { isCredentialFreeLocalChild, localProviderId, parseCodexProviderRoutes, subscriptionIndependentProviderId, type CodexProviderRoutes } from "./codex-owned-provider.js";
 import { CodexDeliveryReceipts } from "./codex-delivery-receipts.js";
 import { CodexTrustedAdmission } from "../codex-trusted-admission.js";
@@ -179,6 +181,20 @@ export type CodexLatestTurnRecoveryEvidence =
     assistantFinal: boolean; pendingQuestion: boolean;
     continuationRootTurnId?: string; continuationActivityItemId?: string;
   }};
+
+type SettingsSnapshot = CodexThreadPermissionState & {
+  thread?: CodexThread; model?: string; reasoningEffort?: string | null;
+};
+
+function observedSettings(snapshot: SettingsSnapshot) {
+  return {
+    model: snapshot.model ?? snapshot.thread?.model ?? null,
+    reasoningEffort: snapshot.reasoningEffort === undefined ? snapshot.thread?.reasoningEffort ?? null : snapshot.reasoningEffort,
+    serviceTier: codexSessionServiceTier(snapshot.serviceTier === undefined ? snapshot.thread?.serviceTier : snapshot.serviceTier) ?? null,
+    sandbox: snapshot.sandboxPolicy ?? snapshot.sandbox ?? null,
+    approvalPolicy: snapshot.approvalPolicy ?? null,
+  };
+}
 
 interface CodexThreadPermissionState {
   approvalPolicy?: unknown;
@@ -386,6 +402,37 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   private readonly processArgs: string[];
   private readonly cwd: string;
   private readonly socketPath?: string;
+  // One entry per observation shape (model catalog, full inventory, or a bounded
+  // page of 1..100 threads). Never share a result between transport generations.
+  private readonly polls = new Map<string, { result: Promise<unknown>; next: number; failures: number }>();
+
+  private poll<T>(key: string, interval: number, load: () => Promise<T>): Promise<T> {
+    const previous = this.polls.get(key);
+    const delay = Math.max(0, (previous?.next ?? 0) - Date.now());
+    if (previous && delay > 0 && (delay === Infinity || previous.failures || key === "models")) {
+      return previous.result as Promise<T>;
+    }
+    // A completed thread observation must not acquire a new freshness receipt.
+    // Pace the next real read and let concurrent observers share that read.
+    const generation = this.transportGeneration;
+    const result = Promise.resolve().then(async () => {
+      if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
+      this.assertLifecycleActive();
+      if (generation !== this.transportGeneration) throw new Error("Codex observation transport changed");
+      return load();
+    });
+    const entry = { result, next: Infinity, failures: previous?.failures ?? 0 };
+    this.polls.set(key, entry);
+    entry.result.then(() => {
+      entry.failures = 0;
+      entry.next = Date.now() + interval;
+    }, () => {
+      entry.failures = Math.min(6, entry.failures + 1);
+      entry.next = Date.now() + Math.min(30_000, 1000 * 2 ** (entry.failures - 1));
+    });
+    return entry.result;
+  }
+
   private readonly modelIds: string[];
   private readonly appServerDataHome: string;
   private readonly transcriptReaderDataHome: string;
@@ -769,7 +816,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         const threadListDeadlineMs = Number.isFinite(requestedThreadListDeadlineMs) && requestedThreadListDeadlineMs >= 500 ? requestedThreadListDeadlineMs : 5000;
         let page: {data?: CodexThread[]; nextCursor?: string | null} | undefined;
         try {
-          page = await this.request("thread/list", {limit, archived:false, sortKey:"updated_at", sortDirection:"desc"}, "thread/list", threadListDeadlineMs) as {data?:CodexThread[];nextCursor?:string|null};
+          page = await this.poll(`threads:${limit}`, 1000, () => this.request("thread/list", {limit, archived:false, sortKey:"updated_at", sortDirection:"desc"}, "thread/list", threadListDeadlineMs)) as {data?:CodexThread[];nextCursor?:string|null};
         } catch (error) {
           if (!(error instanceof Error && error.message.startsWith("Codex app-server timed out during"))) throw error;
           const fallback = await this.rawTranscriptAdapter.listSessions();
@@ -789,7 +836,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         bounded ||= indexed.limited;
         let loadedIds: string[] = [];
         try {
-          const loaded = await this.request("thread/loaded/list", {limit}) as {data?:unknown[];nextCursor?:string|null};
+          const loaded = await this.poll(`loaded:${limit}`, 1000, () => this.request("thread/loaded/list", {limit})) as {data?:unknown[];nextCursor?:string|null};
           if (!Array.isArray(loaded.data) || loaded.data.some(id => typeof id !== "string" || !id || id.length > 512 || /[\x00-\x1f\x7f]/.test(id))) throw new Error("invalid loaded IDs");
           loadedIds = loaded.data as string[];
           bounded ||= Boolean(loaded.nextCursor) || loadedIds.length > limit;
@@ -813,7 +860,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         bounded ||= sorted.length > limit;
         sessions = sorted.slice(0, limit);
       } else {
-        const full = await this.listAllThreads();
+        const full = await this.poll("threads:full", 1000, () => this.listAllThreads());
         sessions = full.threads;
         candidatePartial = full.partial;
       }
@@ -1024,6 +1071,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
           const thread = { ...result.thread, name: result.thread.name ?? cached?.name, cwd: result.thread.cwd ?? cached?.cwd };
           this.threads.set(id, thread);
           base = this.toSession(thread);
+          const latest = this.lastNativeTurns.get(id);
+          if (nativeLatestTurn && latest?.status === "failed") base.status = "error";
+          else if (nativeLatestTurn && latest && ["completed", "interrupted"].includes(latest.status) && base.status === "running") base.status = "idle";
         } else {
           this.threads.delete(id);
         }
@@ -1161,6 +1211,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   }
 
   async createSession(options: CreateSessionOptions): Promise<AgentSession> {
+    if (options.effort !== undefined || options.thinkingBudget !== undefined || options.permissionMode !== undefined) {
+      throw new Error("effort, thinkingBudget and permissionMode require the Claude harness");
+    }
     await this.ensureReady();
     this.assertLifecycleActive();
     if (this.projectRuntimePolicy) {
@@ -1173,6 +1226,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       await this.assertEffectiveProjectToolIsolation();
       this.assertLifecycleActive();
     }
+    const model = this.projectRuntimePolicy?.modelId ?? options.model ?? await this.defaultCodexModel();
+    const decision = await this.chooseTaskSettings(model, options, options.name, true);
+    const selectedModel = this.projectRuntimePolicy?.modelId ?? options.model ?? decision.model;
     const reservation = this.projectRuntimePolicy?.materialized ? await this.reserveMaterializedOperation() : undefined;
     let observedThreadId: string | undefined;
     let materializationStage = "thread_start_not_sent";
@@ -1183,14 +1239,16 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     }
     const result = await this.request("thread/start", {
       cwd: options.cwd,
-      ...(this.projectRuntimePolicy ? { model: this.projectRuntimePolicy.modelId } : options.model ? { model: options.model } : {}),
+      ...(selectedModel ? { model: selectedModel } : {}),
       // `default` is Codex's standard tier; explicit normal must not inherit a global fast tier.
-      serviceTier: options.serviceTier === "fast" ? "fast" : "default",
+      serviceTier: decision.serviceTier === "fast" ? "fast" : "default",
+      ...(decision.reasoningEffort && { config: { model_reasoning_effort: decision.reasoningEffort } }),
       ...(options.fullAccess ? { approvalPolicy: "never", sandbox: "danger-full-access" } : {}),
       ...(this.projectRuntimePolicy ? codexProjectThreadParams(this.projectRuntimePolicy) : {}),
-    }) as { thread?: CodexThread } & CodexThreadPermissionState;
+    }) as SettingsSnapshot;
     const thread = result.thread;
     if (!thread?.id) throw new Error("Codex thread/start did not return a thread id");
+    if (typeof result.model === "string") thread.model = result.model;
     if (result.serviceTier !== undefined) thread.serviceTier = result.serviceTier;
     observedThreadId = thread.id;
     materializationStage = "thread_start_observed";
@@ -1257,7 +1315,8 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       });
     }
     this.emitEvent({ kind: "session.created", harness: "codex", sessionId: thread.id, status: "idle" });
-    return this.toSession(thread);
+    const session = this.toSession(thread);
+    return { ...session, meta: { ...session.meta, settingsDecision: decision, effectiveSettings: observedSettings(result) } };
     } catch (error) {
       if (reservation && this.integratorSessionBindingStore) {
         await this.integratorSessionBindingStore.record({
@@ -1676,6 +1735,19 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       return resumed;
     }
 
+    const thread = this.threads.get(id);
+    const model = this.projectRuntimePolicy?.modelId ?? options.model ?? thread?.model ?? session.model;
+    const sessionTier = codexSessionServiceTier(thread?.serviceTier);
+    // Named and deliver tasks are classified at ingress. A new classified task
+    // chooses its own tier even when the preceding task used Fast.
+    const turnOptions = !options.taskClass && options.serviceTier === undefined && options.latencySensitive === undefined && sessionTier === "fast"
+      ? { ...options, serviceTier: sessionTier } : options;
+    let decision;
+    try {
+      decision = await this.chooseTaskSettings(model ?? undefined, turnOptions, options.message, false, id);
+    } catch (error) {
+      return { ok: false, notSubmitted: true, nonRetryable: true, error: (error as Error).message };
+    }
     const completion = options.queue || options.steer === true ? undefined : this.waitForCompletion(id);
     const generatedPrompt = options.origin !== "human";
     if (generatedPrompt) {
@@ -1692,7 +1764,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         input: [{ type: "text", text: options.message }, ...(options.images ?? []).map((image) => image.kind === "file"
           ? { type: "mention", name: image.fileName, path: image.path }
           : { type: "localImage", path: image.path })],
-        model: this.projectRuntimePolicy?.modelId ?? options.model ?? session.model ?? null,
+        model: model ?? null,
+        ...(decision.reasoningEffort && { effort: decision.reasoningEffort }),
+        serviceTierForTurn: decision.serviceTier === "fast" ? "fast" : "default",
         ...(this.projectRuntimePolicy ? codexProjectTurnParams(this.projectRuntimePolicy) : {}),
       }, "turn/start", this.requestTimeoutMs, options.origin === "human" && Number.isFinite(options.humanRequestedAt)) as { turn?: { id?: string; status?: string } };
       const turnId = result.turn?.id;
@@ -1735,9 +1809,9 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       }
       if (turnId && result.turn?.status === "inProgress") this.activeTurns.set(id, turnId);
       release(); // Waiting for a sync reply must not block another current-turn steer.
-      if (!completion) return { ok: true, admitted: true, turnId, ...(options.inputId ? { inputId: options.inputId } : {}) };
+      if (!completion) return { ok: true, settingsDecision: decision, admitted: true, turnId, ...(options.inputId ? { inputId: options.inputId } : {}) };
       const completed = await completion;
-      return { ...completed, admitted: true, turnId, ...(options.inputId ? { inputId: options.inputId } : {}),
+      return { ...completed, settingsDecision: decision, admitted: true, turnId, ...(options.inputId ? { inputId: options.inputId } : {}),
         ...(!completed.ok ? { nonRetryable: true } : {}) };
     } catch (error) {
       if (completion) this.clearCompletion(id);
@@ -1791,6 +1865,41 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     } catch (error) {
       return { ok: false, error: (error as Error).message };
     }
+  }
+
+  private readonly lastAssistantItems = new Map<string, {turnId: string; itemId?: string; text: string; questions?: boolean}>();
+
+  private completionState(id: string, turn: Record<string, unknown>): CodexTurnState | null {
+    if (typeof turn.id !== "string" || !turn.id) return null;
+    const item = Array.isArray(turn.items)
+      ? [...turn.items].reverse().find(item => item?.type === "agentMessage") : undefined;
+    const saved = this.lastAssistantItems.get(id);
+    const cached = saved?.turnId === turn.id ? saved : undefined;
+    const hasQuestions = item ? Boolean(item.questions?.length) : cached?.questions;
+    let outcome: CodexTurnState["outcome"];
+    switch (turn.status) {
+      case "inProgress": outcome = null; break;
+      case "failed": outcome = "failed"; break;
+      case "interrupted": outcome = "stopped"; break;
+      case "completed": outcome = hasQuestions ? "needs_input" : "completed"; break;
+      default: return null;
+    }
+    const text = typeof item?.text === "string" ? item.text : cached?.text;
+    const parentThreadId = this.threads.get(id)?.parentThreadId;
+    return {
+      sessionId: id, turnId: turn.id, ...(parentThreadId ? {parentThreadId} : {}),
+      state: outcome ? "finished" : "running", outcome,
+      finishedAt: outcome ? threadTimestamp(turn.completedAt as string | number) ?? new Date().toISOString() : null,
+      lastAssistantMessage: outcome && text ? redactSensitive(text.trim()).slice(0, 240) : null,
+    };
+  }
+
+  async readCompletionState(id: string): Promise<CodexTurnState | null> {
+    if (!await this.canReadProjectHistory(id)) return null;
+    await this.ensureReady();
+    const result = await this.request("thread/turns/list", {threadId: id, limit: 1, sortDirection: "desc", itemsView: "summary"},
+      "completion_status", 2000) as {data?: Record<string, unknown>[]};
+    return result.data?.[0] ? this.completionState(id, result.data[0]) : null;
   }
 
   /** One native summary page proves the current latest turn without scanning its rollout. */
@@ -2103,13 +2212,14 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         excludeTurns: true,
         ...(storedProvider ? { modelProvider: storedProvider } : {}),
         ...(this.projectRuntimePolicy ? codexProjectResumeParams(this.projectRuntimePolicy) : {}),
-      }, humanReserve) as { thread?: CodexThread } & CodexThreadPermissionState;
+      }, humanReserve) as SettingsSnapshot;
       if (!result.thread?.id) throw new Error("Codex thread/resume did not return a thread id");
       if (result.thread.id !== id) throw new Error(`Codex thread/resume returned a different thread id (${result.thread.id})`);
       if (result.serviceTier !== undefined) result.thread.serviceTier = result.serviceTier;
       if (this.projectRuntimePolicy && !codexProjectPermissionObserved(result, this.projectRuntimePolicy)) {
         throw new Error("Codex resume did not confirm the project permission profile and exact runtime root");
       }
+      if (typeof result.model === "string") result.thread.model = result.model;
       this.threads.set(id, result.thread);
       return { ok: true };
     } catch (error) {
@@ -2155,6 +2265,21 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     } catch (error) {
       return { ok: false, error: (error as Error).message };
     }
+  }
+
+  async getSessionSettings(sessionId: string) {
+    await this.ensureReady();
+    if (this.projectRuntimePolicy && !this.projectThreadIds.has(sessionId)) throw new Error("Foreign project thread");
+    const generation = this.transportGeneration;
+    const loaded = await this.request("thread/loaded/list", {}) as { data?: string[] };
+    if (!loaded.data?.includes(sessionId)) throw new Error("Session settings unavailable: thread is not loaded");
+    const read = await this.request("thread/read", { threadId: sessionId, includeTurns: false }) as SettingsSnapshot;
+    if (read.thread?.id !== sessionId || !read.thread.modelProvider || generation !== this.transportGeneration)
+      throw new Error("Session settings unavailable: native identity or provider unconfirmed");
+    const snapshot = await this.resumeNativeThread(sessionId, { threadId: sessionId, excludeTurns: true, modelProvider: read.thread.modelProvider,
+      ...(this.projectRuntimePolicy && codexProjectResumeParams(this.projectRuntimePolicy)) }, false, false) as SettingsSnapshot;
+    if (snapshot.thread?.id !== sessionId || generation !== this.transportGeneration) throw new Error("Session settings snapshot identity changed");
+    return observedSettings(snapshot);
   }
 
   async getServiceTier(sessionId: string): Promise<SessionServiceTierState> {
@@ -2251,18 +2376,18 @@ export class CodexAppServerAdapter implements HarnessAdapter {
         model,
         ...(this.threads.get(sessionId)?.modelProvider ? { modelProvider: this.threads.get(sessionId)!.modelProvider } : {}),
         ...(this.projectRuntimePolicy ? codexProjectResumeParams(this.projectRuntimePolicy) : {}),
-      }) as { thread?: CodexThread } & CodexThreadPermissionState;
+      }) as SettingsSnapshot;
       if (result.thread && result.serviceTier !== undefined) result.thread.serviceTier = result.serviceTier;
       if (this.projectRuntimePolicy && !codexProjectPermissionObserved(result, this.projectRuntimePolicy)) {
         throw new Error("Codex model switch did not confirm the project permission profile and exact runtime root");
       }
-      const thread = result.thread || this.threads.get(sessionId);
-      if (thread) {
-        thread.model = model;
-        this.threads.set(sessionId, thread);
-      }
+      if (result.thread?.id !== sessionId) throw new Error("Model change returned no matching native thread");
+      const effectiveSettings = observedSettings(result);
+      result.thread.model = effectiveSettings.model;
+      this.threads.set(sessionId, result.thread);
+      if (effectiveSettings.model !== model) return { ok: false, effectiveSettings, error: "Requested model was not confirmed by Codex" };
       this.emitEvent({ kind: "model.changed", harness: "codex", sessionId, data: { model } });
-      return { ok: true };
+      return { ok: true, effectiveSettings };
     } catch (error) {
       return { ok: false, error: (error as Error).message };
     }
@@ -2312,23 +2437,49 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     // Explicit operator overrides stay supported. The default must follow the
     // same native client that will execute the selected model, not old constants.
     if (this.modelIds.length) return [...this.modelIds];
+    return [...new Set((await this.nativeModelCatalog()).map(row => row.model!))];
+  }
+
+  private async chooseTaskSettings(model: string | undefined, options: TaskOptions, text: string, useDefault = false, threadId?: string) {
+    const task = options.taskClass ?? classifyTask(text);
+    // A pinned project lifecycle operation without task settings needs no discovery RPC.
+    if (this.projectRuntimePolicy && options.taskClass === undefined && options.reasoningEffort === undefined
+      && options.serviceTier === undefined && options.latencySensitive === undefined) {
+      return chooseSettings(options, task, undefined, false);
+    }
+    const catalog = await this.nativeModelCatalog().catch(() => []);
+    const capability = model ? catalog.find(row => row.model === model || row.id === model) : useDefault ? catalog.find(row => row.isDefault) : undefined;
+    const candidate = chooseSettings(options, task, capability, true);
+    if (candidate.serviceTier === "normal") return candidate;
+    const operation = threadId ? "turn/start" : "thread/start";
+    if (codexQuotaExemptModel(model) || await this.subscriptionIndependentRoute(operation, {threadId}))
+      return chooseSettings(options, task, capability, false);
+    const quota = await checkCodexQuota(this.quotaReader ?? (() => this.request("account/rateLimits/read", {})));
+    return chooseSettings(options, task, capability, quota.decision.reason === "reserve_available");
+  }
+
+  private async nativeModelCatalog(): Promise<ModelCapability[]> {
     await this.ensureReady();
-    const rows: Array<{model: string; isDefault: boolean}> = [];
+    return this.poll("models", 30_000, () => this.readModelCatalog());
+  }
+
+  private async readModelCatalog(): Promise<ModelCapability[]> {
+    const rows: ModelCapability[] = [];
     const cursors = new Set<string>();
     let cursor: string | undefined;
     for (let page = 0; page < 20; page++) {
       const result = await this.request("model/list", {
         limit: 100, includeHidden: false, ...(cursor ? {cursor} : {}),
-      }) as {data?: Array<{model?: unknown; id?: unknown; hidden?: boolean; isDefault?: boolean}>; nextCursor?: string | null};
+      }) as {data?: ModelCapability[]; nextCursor?: string | null};
       if (!result || !Array.isArray(result.data)) throw new Error("Native Codex model catalog is unavailable or malformed");
       for (const item of result.data) {
         if (!item || item.hidden) continue;
         const model = typeof item.model === "string" ? item.model : item.id;
-        if (typeof model === "string" && model.trim()) rows.push({model, isDefault: item.isDefault === true});
+        if (typeof model === "string" && model.trim()) rows.push({...item, model});
       }
       if (!result.nextCursor) {
-        rows.sort((a,b)=>Number(b.isDefault)-Number(a.isDefault));
-        return [...new Set(rows.map(row=>row.model))];
+        rows.sort((a,b)=>Number(!!b.isDefault)-Number(!!a.isDefault));
+        return rows;
       }
       if (typeof result.nextCursor !== "string" || cursors.has(result.nextCursor)) throw new Error("Native Codex model catalog repeated or malformed cursor");
       cursor = result.nextCursor;
@@ -2493,7 +2644,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
   async getPermissionState(sessionId: string): Promise<import("../types/index.js").HarnessPermissionState | null> {
     try {
       await this.ensureReady();
-      const observed = await this.request("thread/read", { threadId: sessionId, includeTurns: false }) as { thread?: CodexThread } & CodexThreadPermissionState;
+      const observed = await this.request("thread/read", { threadId: sessionId, includeTurns: false }) as SettingsSnapshot;
       if (observed.thread?.id !== sessionId) return null;
       this.threads.set(sessionId, observed.thread);
       const ownerState = this.ownedPermissionThreads.get(sessionId);
@@ -3062,6 +3213,7 @@ export class CodexAppServerAdapter implements HarnessAdapter {
 
   private beginTransportGeneration(): void {
     this.transportGeneration++;
+    this.polls.clear();
     this.trustedAdmission.forget();
     this.invalidateOwnedPermissionThreads();
   }
@@ -3359,13 +3511,19 @@ export class CodexAppServerAdapter implements HarnessAdapter {
           this.settleCompletion(threadId);
         }
       }
-      this.emitEvent({ kind: "turn.started", harness: "codex", sessionId: threadId, nativeType: message.method, status: "running", data: { turnId: turn?.id } });
+      this.emitEvent({ kind: "turn.started", harness: "codex", sessionId: threadId, nativeType: message.method, status: "running", data: { turnId: turn?.id },
+        completionState: turn?.id ? this.completionState(threadId, {id: turn.id, status:"inProgress"}) ?? undefined : undefined });
     }
     if (message.method === "item/agentMessage/delta" && threadId && typeof params.delta === "string") {
       const thread = this.threads.get(threadId);
       if (thread) thread.preview = params.delta;
       const turnId = typeof params.turnId === "string" ? params.turnId : undefined;
       const itemId = typeof params.itemId === "string" ? params.itemId : undefined;
+      if (turnId && itemId) {
+        const previous = this.lastAssistantItems.get(threadId);
+        const prefix = previous?.turnId === turnId && previous.itemId === itemId ? previous.text : "";
+        this.lastAssistantItems.set(threadId, {turnId, itemId, text: (prefix + params.delta).slice(0, 512)});
+      }
       if (this.projectRuntimePolicy && this.projectThreadIds.has(threadId) && turnId) {
         this.recordProjectAssistantDelta(threadId, turnId, itemId, params.delta);
       }
@@ -3374,6 +3532,10 @@ export class CodexAppServerAdapter implements HarnessAdapter {
     if (message.method === "item/completed" && threadId && typeof params.turnId === "string"
       && params.item && typeof params.item === "object") {
       const item = params.item as Record<string, unknown>;
+      if (item.type === "agentMessage" && typeof item.text === "string") {
+        this.lastAssistantItems.set(threadId, {turnId: params.turnId, text: redactSensitive(item.text.trim()).slice(0, 240),
+          questions: Array.isArray(item.questions) && item.questions.length > 0});
+      }
       const questions = item.type === "agentMessage" && item.phase === "final_answer"
         ? codexAsyncUserInputQuestions(item.questions) : null;
       if (questions && typeof item.id === "string" && item.id) {
@@ -3399,6 +3561,11 @@ export class CodexAppServerAdapter implements HarnessAdapter {
       this.activeTurns.delete(threadId);
       const completedTurn = params.turn as { id?: string; status?: string; completedAt?: string | number } | undefined;
       if (completedTurn?.id && completedTurn.status) {
+        const completionState = this.completionState(threadId, completedTurn);
+        if (completionState?.state === "finished") {
+          this.emitEvent({kind: "session.updated", harness: "codex", sessionId: threadId, completionState});
+          if (this.lastAssistantItems.get(threadId)?.turnId === completedTurn.id) this.lastAssistantItems.delete(threadId);
+        }
         this.unavailableNativeTurnStates.delete(threadId);
         const quotaFailure = codexTerminalQuotaEvidence(completedTurn, this.threads.get(threadId)?.model);
         const capacityFailure = codexTerminalCapacityEvidence(completedTurn, this.threads.get(threadId)?.model);

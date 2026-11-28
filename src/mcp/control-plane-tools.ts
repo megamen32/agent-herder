@@ -7,6 +7,9 @@ import { structuredResult } from "./results.js";
 import { readLongMessage } from "../long-messages.js";
 import { handleSaveMessageToFile } from "../mcp-tools/handlers.js";
 
+import { awaitCompletion } from "../session-completion.js";
+import type { HarnessAdapter } from "../types/index.js";
+
 const jobSchema = z.object({
   id: z.string(), kind: z.string(), state: z.string(), createdAt: z.string(), updatedAt: z.string(),
   ownerSessionId: z.string().optional(), progress: z.number().optional(), statusMessage: z.string().optional(),
@@ -37,6 +40,7 @@ const coordinationNoteCreateSchema = z.object({
 });
 
 export function registerControlPlaneTools(server: McpServer, deps: {
+  completionAdapter?: (id: string) => Promise<HarnessAdapter | undefined>;
   jobs: HerderJobRegistry;
   events: HerderEventBus;
   coordination: CoordinationNoteStore;
@@ -81,11 +85,31 @@ export function registerControlPlaneTools(server: McpServer, deps: {
     outputSchema: z.object({ job: jobSchema.nullable() }),
   }, async (args) => structuredResult({ job: jobs.cancel(args.jobId) }));
 
+  server.registerTool("session_await", {
+    description: "Wait for any watched native Codex thread to finish a turn. Omit afterSequence for current status, then pass the returned cursor. Set includeMessages:true to also receive session message updates. A timeout returns completion:null without a message. On truncated replay, read current status.",
+    inputSchema: z.object({ sessionIds: z.array(z.string().min(1).max(512)).min(1).max(32),
+      includeMessages:z.boolean().default(false), afterSequence: z.number().int().nonnegative().optional(), timeoutMs: z.number().int().min(0).max(50000).default(45000) }),
+  }, async (args, ctx) => structuredResult(await awaitCompletion(events, args.sessionIds, args.afterSequence,
+    args.timeoutMs, ctx.mcpReq.signal, deps.completionAdapter,args.includeMessages)));
+
   server.registerTool("event_list", {
     description: "Replay Agent Herder domain events after a global sequence cursor. Use afterSequence from the last seen event; uriPrefix narrows replay to one resource subtree.",
-    inputSchema: z.object({ afterSequence: z.number().int().min(0).optional().default(0), limit: z.number().int().min(1).max(2000).optional().default(500), uriPrefix: z.string().optional() }),
+    inputSchema: z.object({ afterSequence: z.number().int().min(0).optional().default(0), limit: z.number().int().min(1).max(2000).optional().default(500), uriPrefix: z.string().optional(), timeoutMs:z.number().int().min(0).max(50000).default(0) }),
     outputSchema: z.object({ events: z.array(eventSchema), latestSequence: z.number().int(), oldestSequence: z.number().int().nullable(), truncated: z.boolean() }),
-  }, async (args) => {
+  }, async (args,ctx) => {
+    if(args.timeoutMs && !events.listAfter(args.afterSequence,1,args.uriPrefix).length){
+      await new Promise<void>((resolve,reject)=>{
+        const signal=ctx.mcpReq.signal;
+        const finish=()=>{clearTimeout(timer);unsubscribe();signal.removeEventListener("abort",abort);resolve();};
+        const abort=()=>{reject(new Error("Event wait cancelled"));finish();};
+        const unsubscribe=events.subscribe(event=>{
+          if(event.sequence>args.afterSequence && (!args.uriPrefix || event.uri.startsWith(args.uriPrefix))) finish();
+        });
+        const timer=setTimeout(finish,args.timeoutMs);
+        signal.addEventListener("abort",abort,{once:true});
+        if(signal.aborted) abort();
+      });
+    }
     const oldestSequence = events.oldestSequence();
     return structuredResult({
       events: events.listAfter(args.afterSequence, args.limit, args.uriPrefix),

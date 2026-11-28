@@ -1,396 +1,402 @@
-import { HarnessAdapter, AgentSession, SendMessageOptions, SetPermissionsOptions, localSessionHostId } from "../types/index.js";
-import {
-  listSessions,
-  getSessionInfo,
-  query,
-} from "@anthropic-ai/claude-agent-sdk";
-import type { SDKSessionInfo, PermissionResult, PermissionMode } from "@anthropic-ai/claude-agent-sdk";
-import { readFile, readdir } from "node:fs/promises";
+import type { ClaudeEffectiveSettings } from "../types/common.js";
+import { createHash, randomUUID } from "node:crypto";
+import { PassThrough } from "node:stream";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { setTimeout as delay } from "node:timers/promises";
 import { join } from "node:path";
-import { homedir } from "node:os";
+import {
+  getSessionInfo, getSessionMessages, listSessions, query,
+  type CanUseTool, type HookCallback, type Options, type Query, type SDKMessage,
+  type SDKSessionInfo, type SDKUserMessage,
+} from "@anthropic-ai/claude-agent-sdk";
+import type {
+  AgentSession, ClaudeCreateSettings, ControlResult, CreateSessionOptions, HarnessAdapter,
+  ListSessionsOptions, PermissionRequest, SendMessageOptions, SessionMessageView,
+} from "../types/index.js";
+import { localSessionHostId } from "../types/index.js";
+import { resolveAutopilotStateDir } from "../autopilot/state-dir.js";
+import { ClaudeCodeAdapter } from "./claude.js";
 
-/**
- * Claude Code adapter via the official Claude Agent SDK (TypeScript).
- *
- * Uses listSessions(), getSessionInfo(), query() for direct session management.
- * Supports session listing, resumption, permission callbacks, and message streaming.
- * Falls back to reading JSONL files from disk for transcript/lastMessage extraction.
- */
+const missing = (error: string): ControlResult => ({ ok: false, notSubmitted: true, error });
+const lost: ControlResult = { ok: false, admissionUnknown: true, nonRetryable: true, error: "Claude stream closed before receipt" };
+type Settings = ClaudeCreateSettings & { model?: string };
+type Reply = (result: ControlResult) => void;
+
+// A retry after a lost stream reply can locate the same user frame in native
+// JSONL. UUIDv8 reserves application-defined bits; use a session-scoped hash.
+function inputUuid(session: string, key: string): ReturnType<typeof randomUUID> {
+  const bytes = createHash("sha256").update(JSON.stringify(["herder-claude-input-v1", session, key])).digest();
+  bytes[6] = (bytes[6] & 15) | 0x80;
+  bytes[8] = (bytes[8] & 63) | 0x80;
+  const hex = bytes.toString("hex", 0, 16);
+  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+}
+
+class ClaudeStream {
+  readonly input = new PassThrough({ objectMode: true });
+  readonly query: Query;
+  readonly ready: Promise<unknown>;
+  readonly done: Promise<void>;
+  readonly pending = new Map<string, { prompt: PermissionRequest; answer: (allow: boolean) => void }>();
+  readonly effective: ClaudeEffectiveSettings = { thinkingBudget: null };
+  private readonly acks = new Map<string, Reply>();
+  busy = false;
+  activeInput?: string;
+  initialized = false;
+  lastError?: string;
+  closed = false;
+  lastTool?: string;
+  lastLine?: string;
+  private completion?: { uuid: string; admitted: boolean; finish: Reply };
+  private readonly queued = new Set<string>();
+
+  constructor(readonly id: string, options: Options, onClose: () => void) {
+    const observe: HookCallback = async (event) => {
+      if (!event.agent_id && event.effort) this.effective.effort = event.effort.level;
+      return {};
+    };
+    this.query = query({ prompt: this.input, options: {
+      ...options, extraArgs: { "replay-user-messages": null },
+      hooks: { Stop: [{ hooks: [observe] }], PreToolUse: [{ hooks: [observe] }] },
+      canUseTool: this.permission,
+    } });
+    this.ready = this.query.initializationResult().then(async () => {
+      // 0.3.207 exposes the native get_settings control at runtime. Its
+      // response also contains unrelated user settings; project only applied values.
+      const control = this.query as Query & { getSettings?: () => Promise<{
+        applied?: Record<string, unknown>; effective?: { env?: { MAX_THINKING_TOKENS?: string } };
+      }> };
+      const native = await control.getSettings?.().catch(() => undefined);
+      const applied = native?.applied;
+      if (typeof applied?.model === "string") this.effective.model = applied.model;
+      if (typeof applied?.effort === "string") this.effective.effort = applied.effort;
+      const ceiling = native?.effective?.env?.MAX_THINKING_TOKENS;
+      if (ceiling && /^\d+$/.test(ceiling)) this.effective.thinkingBudget = Number(ceiling);
+      this.initialized = true;
+    });
+    this.done = this.drain().finally(() => {
+      this.closed = true;
+      this.input.end();
+      for (const resolve of this.acks.values()) resolve(lost);
+      this.acks.clear();
+      this.completion?.finish(lost);
+      for (const p of this.pending.values()) p.answer(false);
+      onClose();
+    });
+  }
+
+  private permission: CanUseTool = async (tool, input, opts) => {
+    const id = opts.requestId || opts.toolUseID;
+    return new Promise((resolve) => {
+      const abort = () => answer(false);
+      const timer = setTimeout(abort, 300_000);
+      const answer = (allow: boolean) => {
+        clearTimeout(timer);
+        opts.signal.removeEventListener("abort", abort);
+        this.pending.delete(id);
+        resolve(allow ? { behavior: "allow", updatedInput: input } : { behavior: "deny", message: "Permission denied or expired" });
+      };
+      this.pending.set(id, { prompt: { id, type: "tool_use", toolName: tool, description: opts.title || opts.description || tool }, answer });
+      opts.signal.addEventListener("abort", abort, { once: true });
+      if (opts.signal.aborted || this.closed) abort();
+    });
+  };
+
+  private async drain() {
+    try {
+      for await (const event of this.query) this.observe(event);
+    } catch { /* Stream termination resolves outstanding callers in done. */ }
+  }
+
+  private observe(event: SDKMessage) {
+    if (event.session_id !== this.id) return;
+    if (event.type === "system" && event.subtype === "init") {
+      this.effective.model = event.model;
+      this.effective.permissionMode = event.permissionMode;
+    } else if (event.type === "user" && "isReplay" in event && event.isReplay) {
+      if (this.completion?.uuid === event.uuid) this.completion.admitted = true;
+      if (this.queued.delete(event.uuid)) {
+        this.busy = true;
+        this.activeInput = event.uuid;
+      }
+      this.acks.get(event.uuid)?.({ ok: true, admitted: true, nativeInputMessageId: event.uuid });
+      this.acks.delete(event.uuid);
+    } else if (event.type === "assistant" && !event.parent_tool_use_id) {
+      if (event.error) this.lastError = event.error;
+      for (const block of event.message.content) {
+        if (block.type === "text" && block.text.trim()) this.lastLine = block.text.trim().split(/\r?\n/).at(-1)?.slice(0, 240);
+        if (block.type === "tool_use") this.lastTool = block.name;
+      }
+    } else if (event.type === "result") {
+      this.busy = this.queued.size > 0;
+      this.activeInput = undefined;
+      if (!this.completion?.admitted) return;
+      this.completion.finish(event.is_error || event.subtype !== "success"
+        ? { ok: false, admitted: true, nonRetryable: true, error: `Claude turn failed (${this.lastError || event.subtype})` }
+        : { ok: true, admitted: true });
+      this.completion = undefined;
+    }
+  }
+
+  send(options: SendMessageOptions, seed = false): Promise<ControlResult> {
+    if (this.closed || ((options.activeTurnOnly || options.steer) && !this.activeInput)) return Promise.resolve(missing("No owned active Claude turn"));
+    const sync = !seed && !options.queue && !options.steer;
+    if (sync && this.busy) return Promise.resolve(missing("Claude is busy; select queue or steer"));
+    const uuid = options.inputId ? inputUuid(this.id, options.inputId) : randomUUID();
+    if (this.acks.has(uuid) || this.queued.has(uuid) || this.completion?.uuid === uuid) {
+      return Promise.resolve({ ...lost, error: "Claude input is already in flight" });
+    }
+    const frame: SDKUserMessage = {
+      type: "user", session_id: this.id, uuid, parent_tool_use_id: null,
+      message: { role: "user", content: options.message },
+      ...(seed ? { shouldQuery: false } : { priority: options.steer ? "now" : "next" }),
+    };
+    if (!seed && !this.busy) {
+      this.lastError = undefined;
+    }
+    if (!seed) {
+      this.busy = true;
+      this.queued.add(uuid);
+    }
+    return new Promise((resolve) => {
+      // Each asynchronous call gets its own native user-message echo. Only
+      // one synchronous caller can be waiting for the primary turn result.
+      const timer = setTimeout(() => {
+        this.acks.delete(uuid);
+        if (this.completion?.finish === finish) this.completion = undefined;
+        resolve({ ...lost, error: "Timed out waiting for Claude receipt" });
+      }, sync ? 300_000 : 30_000);
+      const finish: Reply = result => { clearTimeout(timer); resolve({ ...result, inputId: options.inputId }); };
+      if (sync) this.completion = { uuid, admitted: false, finish };
+      else this.acks.set(uuid, finish);
+      this.input.write(frame);
+    });
+  }
+
+  close() {
+    this.closed = true;
+    this.input.end();
+    this.query.close();
+    return this.done;
+  }
+}
+
 export class ClaudeSDKAdapter implements HarnessAdapter {
   readonly type = "claude" as const;
   readonly name = "Claude Code (SDK)";
+  readonly controlCapabilities = { steer: true, resume: true, terminate: true };
+  private readonly streams = new Map<string, ClaudeStream>();
+  private readonly opening = new Map<string, Promise<ClaudeStream>>();
+  private snapshotLimited = false;
+  private readonly files = new ClaudeCodeAdapter({ claudeDir: process.env.CLAUDE_CONFIG_DIR });
 
-  /** Track permission callbacks so respondPermission can resolve them */
-  private pendingPermissions = new Map<
-    string,
-    {
-      toolName: string;
-      input: Record<string, unknown>;
-      resolve: (result: PermissionResult) => void;
+  async init() { await listSessions({ limit: 1 }); }
+
+  private settingsPath(id: string) {
+    if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Invalid Claude session UUID");
+    return join(resolveAutopilotStateDir(), "claude-sessions", id + ".json");
+  }
+
+  private async settings(id: string): Promise<Settings> {
+    try { return JSON.parse(await readFile(this.settingsPath(id), "utf8")); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return {}; throw error; }
+  }
+
+  private async open(id: string, cwd: string, settings: Settings, title?: string) {
+    const { model, effort, permissionMode, thinkingBudget } = settings;
+    const stream = new ClaudeStream(id, {
+      cwd, model, effort, permissionMode,
+      ...(thinkingBudget === undefined ? {} : {
+        thinking: thinkingBudget === 0 ? { type: "disabled" } : { type: "enabled", budgetTokens: thinkingBudget },
+        settings: { env: { MAX_THINKING_TOKENS: String(thinkingBudget) } },
+      }),
+      ...(title === undefined ? { resume: id } : { sessionId: id, title }),
+    }, () => { if (this.streams.get(id) === stream) this.streams.delete(id); });
+    this.streams.set(id, stream);
+    try { await stream.ready; return stream; }
+    catch (error) { await stream.close(); throw error; }
+  }
+
+  async createSession(options: CreateSessionOptions) {
+    if (options.reasoningEffort !== undefined || options.serviceTier !== undefined) {
+      throw new Error("reasoningEffort and serviceTier require the Codex harness");
     }
-  >();
-
-  private claudeDir = join(homedir(), ".claude");
-  private readonly sessionFiles = new Map<string, string>();
-  private sessionFileIndexPromise?: Promise<void>;
-
-  async init(): Promise<void> {
+    const id = randomUUID();
+    const { model, effort, permissionMode, thinkingBudget } = options;
+    const settings = { model, effort, permissionMode, thinkingBudget };
+    await mkdir(join(resolveAutopilotStateDir(), "claude-sessions"), { recursive: true, mode: 0o700 });
+    await writeFile(this.settingsPath(id), JSON.stringify(settings), { flag: "wx", mode: 0o600 });
+    const stream = await this.open(id, options.cwd, settings, options.name);
     try {
-      await listSessions({ limit: 1 });
-    } catch (err) {
-      throw new Error(
-        `Claude Agent SDK init failed: ${(err as Error).message}. Ensure Claude Code is authenticated.`
-      );
-    }
-  }
-
-  async listSessions(): Promise<AgentSession[]> {
-    const sessions = await listSessions({ limit: 100 });
-    return Promise.all(sessions.map(async (s) => {
-      const mapped = this.mapSession(s);
-      // Try to get lastMessage from disk
-      mapped.lastMessage = await this.getLastMessageFromDisk(s.sessionId);
-      // Try to get model from disk (SDK may not always expose it)
-      if (!mapped.model) {
-        mapped.model = await this.getModelFromDisk(s.sessionId);
+      const result = await stream.send({ message: "Session initialized by Agent Herder." }, true);
+      if (!result.ok) throw new Error(result.error);
+      let info = await getSessionInfo(id, { dir: options.cwd });
+      for (let retry = 0; info?.customTitle !== options.name && retry < 20; retry++) {
+        await delay(100);
+        info = await getSessionInfo(id, { dir: options.cwd });
       }
-      return mapped;
-    }));
+      if (!info || info.customTitle !== options.name) throw new Error("Claude session title not yet confirmed in native store");
+      return this.row(info, settings);
+    } catch (error) { await stream.close(); throw error; }
   }
 
-  async getSession(id: string): Promise<AgentSession | null> {
-    try {
-      const info = await getSessionInfo(id);
-      if (!info) return null;
-      const mapped = this.mapSession(info);
-      mapped.lastMessage = await this.getLastMessageFromDisk(id);
-      if (!mapped.model) {
-        mapped.model = await this.getModelFromDisk(id);
-      }
-      return mapped;
-    } catch {
-      return null;
-    }
-  }
-
-  async sendMessage(id: string, options: SendMessageOptions): Promise<{ ok: boolean; error?: string }> {
-    const sessionInfo = await getSessionInfo(id).catch(() => null);
-    const cwd = sessionInfo?.cwd;
-
-    try {
-      const q = query({
-        prompt: options.message,
-        options: {
-          resume: id,
-          cwd,
-          canUseTool: options.steer
-            ? undefined
-            : (toolName, input, _opts) => {
-                const permId = `claude-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-                if (this.pendingPermissions.size > 0) {
-                  return Promise.resolve<PermissionResult>({ behavior: "deny", message: "Another permission is pending" });
-                }
-
-                return new Promise<PermissionResult>((resolve) => {
-                  this.pendingPermissions.set(permId, { toolName, input, resolve });
-
-                  setTimeout(() => {
-                    if (this.pendingPermissions.has(permId)) {
-                      this.pendingPermissions.delete(permId);
-                      resolve({ behavior: "deny", message: "Permission timed out" });
-                    }
-                  }, 300_000);
-                });
-              },
-          ...(options.queue
-            ? { permissionMode: "bypassPermissions" as PermissionMode, maxTurns: 1 }
-            : {}),
-        },
-      });
-
-      if (options.queue) {
-        (async () => {
-          try {
-            for await (const _msg of q) { /* drain */ }
-          } catch { /* ignore */ }
-        })();
-        return { ok: true };
-      }
-
-      for await (const msg of q) {
-        if (msg.type === "result") {
-          if (msg.subtype && msg.subtype.startsWith("error")) {
-            return { ok: false, error: `Agent ended with: ${msg.subtype}` };
-          }
-        }
-      }
-
-      return { ok: true };
-    } catch (err) {
-      return { ok: false, error: (err as Error).message };
-    }
-  }
-
-  async stopSession(_id: string): Promise<{ ok: boolean; error?: string }> {
-    return {
-      ok: false,
-      error:
-        "Claude Agent SDK does not expose a stop API for in-flight sessions. " +
-        "Use Ctrl+C in the terminal where the session is running.",
-    };
-  }
-
-  async respondPermission(
-    _sessionId: string,
-    permissionId: string,
-    response: "allow" | "deny",
-    _remember?: boolean
-  ): Promise<{ ok: boolean; error?: string }> {
-    const pending = this.pendingPermissions.get(permissionId);
+  private async attach(id: string) {
+    const live = this.streams.get(id);
+    if (live) { await live.ready; return live; }
+    let pending = this.opening.get(id);
     if (!pending) {
-      return { ok: false, error: `No pending permission found with ID '${permissionId}'` };
+      pending = (async () => {
+        const info = await getSessionInfo(id);
+        if (!info?.cwd) throw new Error("Claude session or cwd unavailable");
+        return this.open(id, info.cwd, await this.settings(id));
+      })().finally(() => this.opening.delete(id));
+      this.opening.set(id, pending);
     }
+    return pending;
+  }
 
-    if (response === "allow") {
-      pending.resolve({ behavior: "allow" });
-    } else {
-      pending.resolve({ behavior: "deny", message: "Denied by user" });
-    }
-    this.pendingPermissions.delete(permissionId);
+  async resumeSession(id: string) {
+    try { await this.attach(id); return { ok: true }; }
+    catch { return missing("Claude could not resume the selected session"); }
+  }
+
+  async sendMessage(id: string, options: SendMessageOptions) {
+    if (options.activeTurnOnly || options.steer) return this.sendActiveMessage(id, options);
+    try { return await (await this.attach(id)).send(options); }
+    catch { return missing("Claude session could not be opened"); }
+  }
+
+  async sendActiveMessage(id: string, options: SendMessageOptions) {
+    const stream = this.streams.get(id);
+    return stream ? stream.send({ ...options, steer: true }) : missing("No owned active Claude turn");
+  }
+
+  async dispose() {
+    await Promise.all([...this.streams.values()].map(stream => stream.close()));
+  }
+
+  async stopSession(id: string) {
+    const stream = this.streams.get(id) ?? await this.opening.get(id)?.catch(() => undefined);
+    if (!stream) return missing("No owned Claude process for this session");
+    await stream.close();
     return { ok: true };
   }
 
-  async setPermissions(_sessionId: string, options: SetPermissionsOptions): Promise<{ ok: boolean; error?: string }> {
-    if (options.allowedTools || options.mode) {
-      return {
-        ok: false,
-        error:
-          "Claude SDK permissions are set per-query, not per-session. " +
-          "Configure in .claude/settings.json or pass allowedTools when sending a message.",
-      };
-    }
+  async getPermissionState(id: string) {
+    const stream = this.streams.get(id);
+    if (!stream || stream.closed) return null;
+    return {
+      target: { hostId: localSessionHostId(), harness: this.type, sessionId: id },
+      scope: "session" as const, canSetMode: false, currentMode: stream.effective.permissionMode,
+      observedAt: new Date().toISOString(),
+      pendingRequests: [...stream.pending.values()].map(({ prompt }) => ({
+        id: prompt.id, toolName: prompt.toolName, reason: prompt.description, canRespond: true,
+      })),
+    };
+  }
+
+  async respondPermission(id: string, permissionId: string, response: "allow" | "deny", remember?: boolean) {
+    const pending = this.streams.get(id)?.pending.get(permissionId);
+    if (!pending || remember) return missing(remember ? "Persistent permission grants are unavailable" : "No such permission on this session");
+    pending.answer(response === "allow");
     return { ok: true };
   }
 
-  async changeModel(sessionId: string, model: string): Promise<{ ok: boolean; error?: string }> {
-    // Claude SDK: model can be set per-query via the query() options.
-    // For changing the default model, it goes into settings.
-    // Here we store the preferred model and use it on next sendMessage.
-    this._preferredModel = model;
+  async setPermissions() { return missing("Use permissionMode at Claude session creation"); }
+
+  private row(info: SDKSessionInfo, settings?: Settings): AgentSession {
+    const stream = this.streams.get(info.sessionId);
+    const prompt = stream?.pending.values().next().value?.prompt;
+    const status = prompt ? "needs_input" : stream?.busy ? "running" : stream ? "idle" : "stopped";
     return {
-      ok: false,
-      error: `Model will be set to '${model}' on the NEXT message sent to session ${sessionId}. Claude does not support changing the model of an in-flight session.`,
+      id: info.sessionId, harness: this.type, cwd: info.cwd ?? "", hostId: localSessionHostId(),
+      title: (info.customTitle || info.summary || info.firstPrompt || "Untitled session").replace(/[\x00-\x1f\x7f]+/g, " ").trim().slice(0, 128),
+      lastActivity: new Date(info.lastModified).toISOString(), status, needsPermission: !!prompt,
+      permissionDetails: prompt, model: stream?.effective.model, lastMessage: stream?.lastLine,
+      meta: { ready: !!stream?.initialized && !stream.closed, requestedSettings: settings, effectiveSettings: stream?.effective,
+        progress: { turnStatus: stream?.lastError && !stream.busy ? "failed" : status, error: stream?.lastError, lastTool: stream?.lastTool, lastAssistantLine: stream?.lastLine } },
     };
   }
 
-  async listModels(): Promise<string[]> {
-    return [
-      "claude-sonnet-4-20250514",
-      "claude-opus-4-20250115",
-      "claude-3-7-sonnet-20250219",
-      "claude-3-5-sonnet-20241022",
-      "claude-3-5-haiku-20241022",
-      "claude-3-haiku-20240307",
-    ];
+  async getCoordinationActiveTurnId(id: string) {
+    return this.streams.get(id)?.activeInput ?? null;
   }
 
-  /**
-   * Get transcript from the JSONL session file on disk.
-   */
-  async getTranscript(id: string): Promise<string | null> {
-    const filePath = await this.findSessionFile(id);
-    if (!filePath) return null;
-    return this.extractTranscriptText(filePath);
+  async changeModel(id: string, model: string) {
+    const stream = await this.attach(id);
+    if (stream.busy) return missing("Select a model while Claude is idle");
+    await stream.query.setModel(model);
+    // The next system/init carries the resolved native name, including alias expansion.
+    delete stream.effective.model;
+    const settings = { ...await this.settings(id), model };
+    const path = this.settingsPath(id);
+    const staged = path + "." + randomUUID();
+    await mkdir(join(resolveAutopilotStateDir(), "claude-sessions"), { recursive: true, mode: 0o700 });
+    await writeFile(staged, JSON.stringify(settings), { mode: 0o600 });
+    await rename(staged, path);
+    return { ok: true };
   }
 
-  /** Preferred model for next query */
-  private _preferredModel?: string;
-
-  /** Get pending permission requests for external polling */
-  getPendingPermissionRequests(): Array<{
-    id: string;
-    toolName: string;
-    description: string;
-    details: string;
-  }> {
-    return [...this.pendingPermissions.entries()].map(([id, p]) => ({
-      id,
-      toolName: p.toolName,
-      description: `Claude wants to use tool: ${p.toolName}`,
-      details: JSON.stringify(p.input, null, 2),
-    }));
+  async listModels() {
+    const stream = this.streams.values().next().value;
+    return stream ? (await stream.query.supportedModels()).map(model => model.value) : this.files.listModels();
   }
 
-  // ---- Internal helpers ----
-
-  private mapSession(info: SDKSessionInfo): AgentSession {
-    const now = Date.now();
-    const lastMod = info.lastModified || now;
-    const isRecent = (now - lastMod) < 60_000;
-
-    // Extract model from SDKSessionInfo if available
-    const model = (info as Record<string, unknown>).model as string | undefined;
-
-    return {
-      id: info.sessionId,
-      harness: "claude",
-      status: isRecent ? "running" : "stopped",
-      title: info.summary || info.firstPrompt || info.customTitle || "Untitled session",
-      cwd: info.cwd || process.cwd(),
-      hostId: localSessionHostId(),
-      lastActivity: new Date(lastMod).toISOString(),
-      model,
-      needsPermission: this.pendingPermissions.size > 0,
-      durationSec: info.createdAt ? (now - info.createdAt) / 1000 : undefined,
-      meta: {
-        gitBranch: info.gitBranch,
-        tag: info.tag,
-        fileSize: info.fileSize,
-        customTitle: info.customTitle,
-        createdAt: info.createdAt ? new Date(info.createdAt).toISOString() : undefined,
-      },
-    };
+  async listSessions(options: ListSessionsOptions = {}) {
+    const limit = options.limit ?? 100;
+    const infos = await listSessions({ dir: options.cwd, limit: limit + 1, includeWorktrees: false });
+    this.snapshotLimited = infos.length > limit;
+    return infos.slice(0, limit).map(info => {
+      const row = this.row(info);
+      delete row.meta;
+      return row;
+    });
   }
 
-  /**
-   * Find the JSONL file path for a session by scanning project hashes.
-   */
-  private async findSessionFile(sessionId: string): Promise<string | null> {
-    await this.ensureSessionFileIndex();
-    return this.sessionFiles.get(sessionId) || null;
+  getSessionSnapshotReceipt() {
+    return { exhaustive: !this.snapshotLimited, observedAt: new Date().toISOString(), source: "claude-sdk",
+      ...(this.snapshotLimited && { reason: "bounded_native_page" }) };
   }
 
-  /**
-   * Build the local session-file index once per adapter instance. Without this
-   * cache, searching N transcripts rescans every Claude project directory N
-   * times and becomes quadratic on a busy machine.
-   */
-  private async ensureSessionFileIndex(): Promise<void> {
-    if (!this.sessionFileIndexPromise) {
-      this.sessionFileIndexPromise = (async () => {
-        const projectsDir = join(this.claudeDir, "projects");
-        try {
-          const projectHashes = await readdir(projectsDir);
-          await Promise.all(projectHashes.map(async (hash) => {
-            const sessionDir = join(projectsDir, hash, "sessions");
-            try {
-              const files = await readdir(sessionDir);
-              for (const file of files) {
-                if (file.endsWith(".jsonl")) this.sessionFiles.set(file.slice(0, -6), join(sessionDir, file));
-              }
-            } catch {
-              // A project can disappear while Claude rotates its session files.
-            }
-          }));
-        } catch {
-          // Claude may not have a local project store yet.
-        }
-      })();
+  async findNamedSessions(name: string, cwd: string) {
+    return (await listSessions({ dir: cwd, includeWorktrees: false })).filter(info => info.customTitle === name).map(info => this.row(info));
+  }
+
+  async getSession(id: string) {
+    const info = await getSessionInfo(id);
+    if (!info) return null;
+    const row = this.row(info, await this.settings(id));
+    if (!this.streams.has(id)) {
+      const tail = await this.files.readProgress(id);
+      row.lastMessage = tail.lastAssistantLine;
+      row.meta!.progress = { turnStatus: row.status, ...tail };
     }
-    await this.sessionFileIndexPromise;
+    return row;
   }
 
-  /**
-   * Read the last message from the JSONL file on disk.
-   */
-  private async getLastMessageFromDisk(sessionId: string): Promise<string | undefined> {
-    const filePath = await this.findSessionFile(sessionId);
-    if (!filePath) return undefined;
+  async getCoordinationMessageAdmission(id: string, key: string) {
+    const uuid = inputUuid(id, key);
+    const rows = await getSessionMessages(id);
+    return rows.some(row => row.session_id === id && row.type === "user" && row.uuid === uuid)
+      ? { state: "admitted" as const } : { state: "not_found" as const };
+  }
 
-    try {
-      const content = await readFile(filePath, "utf-8");
-      const lines = content.split("\n").filter(Boolean);
-      let lastAssistantMsg = "";
-      let lastHumanMsg = "";
-
-      for (const line of lines) {
-        try {
-          const entry = JSON.parse(line);
-          if (entry.type === "human" && entry.message?.content) {
-            const c = Array.isArray(entry.message.content)
-              ? entry.message.content.find((b: { type: string; text?: string }) => b.type === "text")
-              : null;
-            if (c?.text) lastHumanMsg = c.text;
-          }
-          if (entry.type === "assistant" && entry.message?.content) {
-            const parts: string[] = [];
-            if (Array.isArray(entry.message.content)) {
-              for (const block of entry.message.content) {
-                if (block.type === "text" && block.text) parts.push(block.text);
-                else if (block.type === "tool_use" && block.name) parts.push(`[Tool: ${block.name}]`);
-              }
-            }
-            if (parts.length > 0) lastAssistantMsg = parts.join(" ");
-          }
-        } catch { /* skip */ }
+  async getSessionMessages(id: string, limit = 200, recoverInputId?: string): Promise<SessionMessageView[]> {
+    const native = await getSessionMessages(id);
+    const expected = recoverInputId && inputUuid(id, recoverInputId);
+    const rows = expected ? native.filter(row => row.session_id === id && row.type === "user" && row.uuid === expected) : native.slice(-limit);
+    return rows.map(({ uuid, type, message }) => {
+      const { content } = message as { content?: string | { type: string; text?: string; name?: string }[] };
+      const parts: SessionMessageView["parts"] = [];
+      if (typeof content === "string") parts.push({ type: "text", text: content });
+      else for (const block of content ?? []) {
+        if (block.type === "text") parts.push({ type: "text", text: block.text });
+        if (block.type === "tool_use") parts.push({ type: "tool_call", name: block.name });
       }
-
-      const msg = lastAssistantMsg || lastHumanMsg;
-      if (msg && msg.length > 300) return msg.slice(0, 300) + "...";
-      return msg || undefined;
-    } catch {
-      return undefined;
-    }
+      return { id: uuid, nativeMessageId: uuid, sessionId: id, role: type, ...(expected && { inputId: recoverInputId }), parts, text: parts.map(p => p.text).filter(Boolean).join("\n") };
+    });
   }
 
-  /**
-   * Extract the model name from the JSONL file on disk.
-   */
-  private async getModelFromDisk(sessionId: string): Promise<string | undefined> {
-    const filePath = await this.findSessionFile(sessionId);
-    if (!filePath) return undefined;
-
-    try {
-      const content = await readFile(filePath, "utf-8");
-      const lines = content.split("\n").filter(Boolean);
-      let model: string | undefined;
-
-      for (const line of lines) {
-        try {
-          const entry = JSON.parse(line);
-          if (entry.model) model = entry.model;
-          else if (entry.message?.model) model = entry.message.model;
-          else if (entry.message?.metadata?.model) model = entry.message.metadata.model;
-        } catch { /* skip */ }
-      }
-      return model;
-    } catch {
-      return undefined;
-    }
-  }
-
-  /**
-   * Extract full transcript text from a JSONL session file.
-   */
-  private async extractTranscriptText(filePath: string): Promise<string> {
-    const content = await readFile(filePath, "utf-8");
-    const lines = content.split("\n").filter(Boolean);
-    const parts: string[] = [];
-
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line);
-        const role = entry.type === "human" ? "User" : entry.type === "assistant" ? "Assistant" : entry.type;
-        if (role === "User" || role === "Assistant") {
-          let text = "";
-          if (entry.message?.content) {
-            if (typeof entry.message.content === "string") {
-              text = entry.message.content;
-            } else if (Array.isArray(entry.message.content)) {
-              const textParts: string[] = [];
-              for (const block of entry.message.content) {
-                if (block.type === "text" && block.text) textParts.push(block.text);
-                else if (block.type === "tool_use" && block.name) textParts.push(`[Tool: ${block.name}]`);
-              }
-              text = textParts.join(" ");
-            }
-          }
-          if (text) parts.push(`${role}: ${text.slice(0, 2000)}`);
-        }
-      } catch { continue; }
-    }
-
-    return parts.join("\n\n");
-  }
+  getTranscript(id: string) { return this.files.getTranscript(id); }
+  getRawTranscript(id: string, signal?: AbortSignal) { return this.files.getRawTranscript(id, signal); }
 }

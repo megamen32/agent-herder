@@ -748,7 +748,14 @@ function registerTools(
     registerCdpTools(server, { client: cdpChatClient, capabilities: cdpCapabilities, accountArchive: cdpAccountArchive, historyArchive: cdpHistoryArchive, jobs });
   }
   registerUserIoDotTools(server, userioDot);
-  registerControlPlaneTools(server, { jobs, events, coordination: coordinationNotes, autopilot: { command: input => autopilotSessionCommand(input, canonicalClient) } });
+  registerControlPlaneTools(server, {
+    completionAdapter: async sessionId => {
+      const route = await integratorFleetRuntime.adapterForSession({hostId: hostname(), harness: "codex", nativeSessionId: sessionId});
+      if (route.kind === "deny") throw new Error("Project-scoped session binding could not be verified.");
+      return route.kind === "scoped" ? route.adapter : adapters.get("codex");
+    },
+    jobs, events, coordination: coordinationNotes, autopilot: { command: input => autopilotSessionCommand(input, canonicalClient) },
+  });
   registerResumeAfterTools(server, resumeAfter, humanRequestsRegistry);
   registerCadenceTools(server, cadence);
 
@@ -767,6 +774,7 @@ function registerTools(
   // A human answer resumes its exact native session exactly once through the
   // same durable admission the internal completion endpoint uses.
   registerHumanRequestTools(server, humanRequests, {
+    deliverDecision:createNoticeQuestionDelivery(process.env),
     humanResume: humanResume ?? (async (request) => new AgentResumeClient().resume(request)),
     queryReceipt: humanResumeQuery ?? ((request: ResumeTransportRequest) => boundResumeReceiptQuery(request, adapters)),
     adapters,
@@ -775,7 +783,7 @@ function registerTools(
       : undefined,
   });
   registerBackgroundTools(server, { browserWakeService, jobs, sessionConverter });
-  registerSessionTools(server, { adapters, jobs, events, integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, deliveryPolicy: readLaunchPolicyStateForGate, canonicalClient, userMessageDelivery, sessionQueueControl, resumeAfter, ...(inventorySupervisor ? { supervisor: inventorySupervisor } : {}) });
+  registerSessionTools(server, { adapters, jobs, events, trustedIngress:trustedMeshIngress, pendingQuestions:async()=>new Set((await humanRequests.list("pending")).map(row=>JSON.stringify([row.target.agent??row.target.harness,row.target.sessionId]))), integratorRuntime: integratorFleetRuntime, launchPolicy: readLaunchPolicyForGate, deliveryPolicy: readLaunchPolicyStateForGate, canonicalClient, userMessageDelivery, sessionQueueControl, resumeAfter, ...(inventorySupervisor ? { supervisor: inventorySupervisor } : {}) });
   registerRagTools(server, adapters);
   registerResourceOwnershipTools(server);
   registerProjectReleaseTools(server);
@@ -1512,6 +1520,8 @@ async function main() {
     userMessageDelivery.close();
     void (async () => {
       await installedLocalRecovery?.close().catch(() => undefined);
+      const claude = adapters.get("claude");
+      if (claude instanceof ClaudeSDKAdapter) await claude.dispose().catch(() => undefined);
       const zcode = adapters.get('zcode') as ZcodeAdapter | undefined;
       try { await integratorFleetRuntime.dispose(); }
       catch (error) { console.error('[agent-herder] scoped Codex shutdown failed:', String(error)); }

@@ -9,6 +9,21 @@ describe('native Codex model discovery',()=>{
   for(const p of pages)request.mockResolvedValueOnce(p);
   return {adapter,ready,request};
  }
+ it('coalesces a burst and backs off after failed catalog reads',async()=>{
+  const f=fake([]);
+  f.request.mockRejectedValue(new Error('offline'));
+  const burst=await Promise.allSettled(Array.from({length:8},()=>f.adapter.listModels()));
+  expect(burst.every(result=>result.status==='rejected')).toBe(true);
+  await expect(f.adapter.listModels()).rejects.toThrow('offline');
+  expect(f.request).toHaveBeenCalledTimes(1);
+  const clock=vi.spyOn(Date,'now').mockReturnValue(Date.now()+1001);
+  try {
+   f.request.mockResolvedValueOnce({data:[{model:'available'}]});
+   await expect(f.adapter.listModels()).resolves.toEqual(['available']);
+   await expect(f.adapter.listModels()).resolves.toEqual(['available']);
+   expect(f.request).toHaveBeenCalledTimes(2);
+  } finally { clock.mockRestore(); }
+ });
  it('reads the native current catalog instead of legacy o4-mini constants',async()=>{
   const f=fake([{data:[{id:'luna-ui',model:'gpt-6-luna',isDefault:false},{id:'sol-ui',model:'gpt-6.1-sol',isDefault:true},{model:'hidden',hidden:true}],nextCursor:null}]);
   expect(await f.adapter.listModels()).toEqual(['gpt-6.1-sol','gpt-6-luna']);
@@ -43,11 +58,8 @@ describe('model actually submitted to native Codex inference',()=>{
   const request=vi.spyOn(adapter as any,'request').mockResolvedValue({turn:{id:'new-turn',status:'inProgress'}});
   const result=await adapter.sendMessage('turn-model-proof',{message:'test only',model:'selected-sol',origin:'human',queue:true} as any);
   expect(result.ok).toBe(true);
-  // The request helper carries its own timeout arguments, so the contract is
-  // read from the method and the parameters of the first call.
-  expect(request).toHaveBeenCalled();
-  const [method, params] = request.mock.calls[0]!;
-  expect(method).toBe('turn/start');
+  expect(request.mock.calls.map(([method]) => method)).toEqual(['model/list', 'turn/start']);
+  const [, params] = request.mock.calls[1]!;
   expect(params).toMatchObject({model:'selected-sol'});
   expect(params).not.toMatchObject({model:'prior-luna'});
  });

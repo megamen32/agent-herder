@@ -1,3 +1,6 @@
+import type { FleetCreateReceipt } from "./fleet-contract.js";
+import { taskOptions } from "../effort-tier-policy.js";
+import { taskFields } from "../mcp-tools/definitions.js";
 import {hostname,userInfo,platform,homedir} from 'node:os';
 import {join} from 'node:path';
 import {FleetCreateJournal} from './fleet-create-journal.js';
@@ -93,8 +96,8 @@ export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<strin
  const ownerJournal=deps.ownerJournal??new FleetCreateJournal(join(homedir(),'.local/state/agent-herder/fleet/direct-peer-create.json'),{profileId:'native-owner:'+nativeUser,userId:nativeUser});
  // Receiver owns the once-record across sender-node failure and client disconnect.
  const readinessSchema=z.object({state:z.literal('ready').optional(),projectId:z.string(),projectRoot:z.string(),rootIdentity:z.string(),policyRevision:z.string(),hostId:z.string(),harness:z.enum(['codex','zcode','opencode']),harnessVersion:z.string(),model:z.string().min(1),requiredTools:z.array(z.string()),availableTools:z.array(z.string()),availableModels:z.array(z.string()),resourceReady:z.boolean(),runtimeInstanceId:z.string(),cwd:z.string(),pathResolution:z.object({requestedCwd:z.string(),canonicalCwd:z.string(),rootPath:z.string(),contained:z.boolean(),identityMatches:z.boolean()}).strict(),observedAtMs:z.number()}).strict();
- server.registerTool('fleet_create_session',{description:'Create one local empty session with a durable exact intent identity. Codex serviceTier applies only to a newly created Codex thread; other harnesses reject the field. An uncertain result is never replayed.',inputSchema:z.object({inputId:z.string().regex(/^[a-f0-9]{64}$/),harness:z.enum(['codex','zcode','opencode']),name:z.string().trim().min(1).max(128),cwd:z.string().min(1).max(4096),model:z.string().min(1).max(128).optional(),serviceTier:z.enum(['normal','fast']).optional(),project:z.string().trim().min(1).max(512).optional(),projectReadinessContract:z.literal('integrator-host-readiness-v1').optional(),projectReadiness:readinessSchema.optional()}).strict()},async(request)=>{
-  if(request.serviceTier!==undefined&&request.harness!=='codex'){
+ server.registerTool('fleet_create_session',{description:'Create one local empty session with a durable exact intent identity. Codex serviceTier applies only to a newly created Codex thread; other harnesses reject the field. An uncertain result is never replayed.',inputSchema:z.object({inputId:z.string().regex(/^[a-f0-9]{64}$/),harness:z.enum(['codex','zcode','opencode']),name:z.string().trim().min(1).max(128),cwd:z.string().min(1).max(4096),model:z.string().min(1).max(128).optional(),...taskFields,serviceTier:z.enum(['normal','fast']).optional(),project:z.string().trim().min(1).max(512).optional(),projectReadinessContract:z.literal('integrator-host-readiness-v1').optional(),projectReadiness:readinessSchema.optional()}).strict()},async(request)=>{
+  if((request.serviceTier!==undefined||request.reasoningEffort!==undefined)&&request.harness!=='codex'){
    const refused={ok:false,created:false,state:'not_attempted',inputId:request.inputId,reason:'service_tier_codex_only'};
    return {structuredContent:refused,content:[{type:'text' as const,text:JSON.stringify(refused)}]};
   }
@@ -110,22 +113,42 @@ export function registerFleetNodeTools(server:McpServer,deps:{adapters:Map<strin
     return {structuredContent:refused,content:[{type:'text' as const,text:JSON.stringify(refused)}]};
    }
   }
+  const ownerAdapter = deps.adapters.get(request.harness);
+  const findExisting = request.project === undefined && ownerAdapter?.findNamedSessions ? async (): Promise<FleetCreateReceipt | undefined> => {
+    const cwd = await realpath(request.cwd);
+    const matches = await ownerAdapter.findNamedSessions!(request.name, cwd);
+    if (matches.length > 1) return {state:"not_attempted",inputId:request.inputId,retryable:false,reason:"ambiguous_named_session"};
+    const session = matches[0];
+    if (!session) return undefined;
+    if (session.harness !== request.harness || session.title !== request.name || await realpath(session.cwd) !== cwd)
+      throw new Error("Named session identity mismatch");
+    const effectiveSettings = await ownerAdapter.getSessionSettings?.(session.id).catch(() => undefined);
+    return { state:"created", inputId:request.inputId, address:{hostId:hostname(),harness:request.harness,nativeSessionId:session.id},
+      launchCwd:cwd, effectiveSettings, retryable:false };
+  } : undefined;
+  let createdNow = false;
   const receipt=await ownerJournal.once({...request,hostId:hostname()},async()=>{
    if(request.project!==undefined){
     if(!deps.integratorRuntime)return {state:'not_attempted',inputId:request.inputId,retryable:false,reason:'project_scoped_create_unavailable'};
     // The selected harness reaches the runtime: the project route of that harness decides whether
     // it is prepared, and it names the reason when it is not.
-    return deps.integratorRuntime.create({project:request.project,inputId:request.inputId,name:request.name,cwd:request.cwd,...(request.model?{model:request.model}:{}),...(request.serviceTier?{serviceTier:request.serviceTier}:{}),harness:request.harness,projectReadinessContract:request.projectReadinessContract,projectReadiness:request.projectReadiness as IntegratorProjectReadinessSnapshot});
+    return deps.integratorRuntime.create({project:request.project,inputId:request.inputId,name:request.name,cwd:request.cwd,...(request.model?{model:request.model}:{}),...taskOptions(request),harness:request.harness,projectReadinessContract:request.projectReadinessContract,projectReadiness:request.projectReadiness as IntegratorProjectReadinessSnapshot});
    }
    const adapter=deps.adapters.get(request.harness);
    if(!adapter?.createSession)return {state:'not_attempted',inputId:request.inputId,retryable:false,reason:'native_create_unavailable'};
    let cwd:string;
    try { cwd=await realpath(request.cwd); } catch { return {state:'not_attempted',inputId:request.inputId,retryable:false,reason:'native_cwd_unavailable'}; }
    if(await getHumanStopStore().findHeldNamed(request.harness,request.name,cwd))return {state:'not_attempted',inputId:request.inputId,retryable:false,reason:'human_stop_held'};
-   const session=await adapter.createSession({name:request.name,cwd,...(request.model?{model:request.model}:{}),...(request.serviceTier?{serviceTier:request.serviceTier}:{})});
-   return {state:'created',inputId:request.inputId,address:{hostId:hostname(),harness:request.harness,nativeSessionId:session.id},launchCwd:session.cwd,retryable:false};
-  });
-  const result=receipt.state==='created'&&receipt.address&&receipt.launchCwd?{ok:true,created:true,harness:receipt.address.harness,sessionId:receipt.address.nativeSessionId,cwd:receipt.launchCwd,inputId:receipt.inputId}:{ok:false,created:false,state:receipt.state,inputId:receipt.inputId,...(receipt.reason?{reason:receipt.reason}:{})};
+   const existing = await findExisting?.();
+   if (existing) return existing;
+   const session=await adapter.createSession({name:request.name,cwd,...(request.model?{model:request.model}:{}),...taskOptions(request)});
+   createdNow = true;
+   return {state:'created',effectiveSettings:session.meta?.effectiveSettings,settingsDecision:session.meta?.settingsDecision,inputId:request.inputId,address:{hostId:hostname(),harness:request.harness,nativeSessionId:session.id},launchCwd:session.cwd,retryable:false};
+  }, ...(findExisting ? [findExisting] : []));
+  const observed = request.project === undefined && receipt.address && ownerAdapter?.getSession
+    ? await ownerAdapter.getSession(receipt.address.nativeSessionId).catch(() => null) : null;
+  const ready = !!observed && observed.id === receipt.address?.nativeSessionId && observed.meta?.nativeStateObserved !== false;
+  const result=receipt.state==='created'&&receipt.address&&receipt.launchCwd?{ok:true,created:true,...(request.project === undefined && {alreadyExisted:!createdNow,ready}),settingsDecision:receipt.settingsDecision,effectiveSettings:receipt.effectiveSettings,harness:receipt.address.harness,sessionId:receipt.address.nativeSessionId,cwd:receipt.launchCwd,inputId:receipt.inputId}:{ok:false,created:false,state:receipt.state,inputId:receipt.inputId,...(receipt.reason?{reason:receipt.reason}:{})};
   const resultWithReadiness=request.project===undefined?result:{...result,projectReadinessContract:'integrator-host-readiness-v1',projectExecution:receipt.state==='created'?receipt.projectExecution:undefined};
   return {structuredContent:resultWithReadiness,content:[{type:'text' as const,text:JSON.stringify(resultWithReadiness)}]};
  });

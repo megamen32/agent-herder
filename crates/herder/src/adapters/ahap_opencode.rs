@@ -1022,9 +1022,9 @@ impl NativeSessionReader for AhapOpenCode {
         {
             return Err(ReadError("AHAP session identity mismatch".into()));
         }
-        let messages = if self.native_browser()
-            && (self.policy.harness == "zai"
-                || self.capabilities()["nativeProtocol"] == "herder-extension")
+        let messages = if self.policy.harness == "claude"
+            || (self.native_browser() && (self.policy.harness == "zai"
+                || self.capabilities()["nativeProtocol"] == "herder-extension"))
         {
             self.raw_call(
                 "getSessionMessages",

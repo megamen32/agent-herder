@@ -154,9 +154,9 @@ describe("canonical direct resume", () => {
     await expect(client.resume(request)).resolves.toMatchObject({ status: "rejected", detail: "canonical_config_required" });
     expect(fallback).toBe(0);
   });
-  it("keeps Claude disabled in canonical mode", async () => {
-    const f = await fixture(); await expect(f.transport.resume({ ...request, target: { ...request.target, agent: "claude" } as ResumeTransportRequest["target"] }))
-      .resolves.toMatchObject({ status: "rejected", reason: "harness_disabled" }); expect(f.state.nativeEffects).toBe(0);
+  it("honors the owner continuation capability for Claude", async () => {
+    const f = await fixture(); f.state.automatic = false; await expect(f.transport.resume({ ...request, target: { ...request.target, agent: "claude" } as ResumeTransportRequest["target"] }))
+      .resolves.toMatchObject({ status: "rejected", reason: "canonical_automatic_continuation_unsupported" }); expect(f.state.nativeEffects).toBe(0);
   });
 });
 

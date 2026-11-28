@@ -372,7 +372,7 @@ describe("named session creation and reuse", () => {
       cwd,
     });
 
-    expect(result).toEqual({ ok: true, created: true, sessionId: "opencode-1", harness: "opencode", name: "repair_100", cwd });
+    expect(result).toEqual({ ok: true, created: true, alreadyExisted: false, ready: true, sessionId: "opencode-1", harness: "opencode", name: "repair_100", cwd });
   });
 
   it("scopes native session discovery to the requested CWD before creating", async () => {

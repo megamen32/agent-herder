@@ -9,7 +9,8 @@ import { structuredResult } from "./results.js";
 import { createHash } from "node:crypto";
 import type { HarnessAdapter } from "../types/index.js";
 import { createPermissionHumanQuestion, hasPermissionReplyContextRef } from "../permission-control/notice-bridge.js";
-import { hasNativeUserInputContextRef } from "../human-request/native-user-input-notice.js";
+import { loadAskHumanProducer } from "../human-request/ask-human-producer.js";
+import { hasNativeUserInputContextRef, readNoticeUserAnswer } from "../human-request/native-user-input-notice.js";
 import { hasAsyncUserInputContextRef } from "../human-request/async-user-input-notice.js";
 
 const humanRequestSchema = z.object({
@@ -34,6 +35,9 @@ const resumeSchema = z.object({
 });
 
 export interface HumanRequestToolOptions {
+  decisionProducer?: typeof loadAskHumanProducer;
+  fetchDecisionResult?: typeof fetch;
+  deliverDecision?: (question: import("../autopilot/index.js").PendingHumanQuestion) => Promise<void>;
   /**
    * Bound native resume of one human answer. Required: an answer must either
    * resume its exact session exactly once or fail loudly, never park a request
@@ -106,6 +110,8 @@ export function registerHumanRequestTools(
       locator: z.record(z.string(), z.unknown()).optional(), contextRef: z.string().optional(),
       permissionRequestId: z.string().min(1).max(512).optional().describe("Exact currently pending native permission request. Creates fixed Allow/Deny choices bound to this request; never used for general questions."),
       message: z.string().min(1).max(4096).optional().describe("The human-readable question. Omit it for a metadata-only request that shows no Notice card; never paste a secret value into it"),
+      decisionRequestKey:z.string().min(1).max(256).optional().describe("Stable key for this decision. Use a new key to ask an identical question again."),
+      recommendedChoiceId:z.string().min(1).max(64).optional().describe("Post a decision card through the configured Notice producer, marking this choice as recommended."),
       choices: z.array(z.object({ choiceId: z.string().min(1).max(64), label: z.string().min(1).max(512) })).min(2).max(4).optional(),
       notify: z.object({ project: z.string().min(1), recipient: z.string().min(1), kind: z.string().min(1), severity: z.string().min(1), title: z.string().min(1) }).optional(),
     }),
@@ -120,6 +126,8 @@ export function registerHumanRequestTools(
     }) }),
   }, async (args) => {
     if (args.harness === "hermes" && !args.locator) throw new Error("Hermes human request requires an immutable hermes.locator.v2 locator");
+    if (args.recommendedChoiceId && (args.kind !== "user" || args.permissionRequestId || !args.choices?.some(choice=>choice.choiceId===args.recommendedChoiceId) || !options.deliverDecision))
+      throw new Error("Decision requires a listed recommendation, a user question and an available Notice producer");
     if (args.permissionRequestId !== undefined) {
       if (args.kind !== "user" || !options.adapters) throw new Error("native permission questions require an available native adapter and a user request");
       const adapter = options.adapters.get(args.harness);
@@ -132,14 +140,18 @@ export function registerHumanRequestTools(
       const { record: _bindingRecord, ...binding } = created.binding;
       return structuredResult({ request: created.record, binding });
     }
+    const decisionFingerprint = createHash("sha256").update(JSON.stringify([args.harness,args.sessionId,args.cwd,args.marker,args.locator,args.message,args.choices,args.recommendedChoiceId,args.contextRef,args.notify])).digest("hex");
+    const decisionKey = createHash("sha256").update(JSON.stringify([args.harness,args.sessionId,args.decisionRequestKey ?? decisionFingerprint])).digest("hex");
     const binding = await askHuman(humanRequests, {
+      ...(args.recommendedChoiceId ? {decision:{decisionKey,decisionFingerprint}} : {}),
       kind: args.kind,
       target: { harness: args.harness, sessionId: args.sessionId, ...(args.cwd ? { cwd: args.cwd } : {}), ...(args.marker ? { marker: args.marker } : {}), ...(args.locator ? { locator: args.locator } : {}) },
       ...(args.message ? { message: args.message } : {}),
-      ...(args.choices ? { choices: args.choices } : {}),
+      ...(args.choices ? { choices: args.choices.map(c=>c.choiceId===args.recommendedChoiceId ? {...c,label:c.label+" (recommended)"} : c) } : {}),
       contextRef: args.contextRef,
       ...(args.notify ? { contextRef: args.contextRef ?? `noticeplace://human-request/${args.harness}/${args.sessionId}` } : {}),
     });
+    if (args.recommendedChoiceId && binding.question && binding.record.status==="pending") await options.deliverDecision!({...binding,question:binding.question});
     const { record, ...question } = binding;
     return structuredResult({ request: record, binding: question });
   });
@@ -179,10 +191,18 @@ export function registerHumanRequestTools(
 
   server.registerTool("human_request_get", {
     description: "Read opaque Human Request lifecycle, routing metadata and its bound durable resume receipt when available.",
-    inputSchema: z.object({ requestId: z.string().uuid() }),
-    outputSchema: z.object({ request: humanRequestSchema.nullable(), resumeReceipt: z.unknown().nullable().optional() }),
+    inputSchema: z.object({ requestId: z.string().uuid(),includeAnswer:z.boolean().optional() }),
+    outputSchema: z.object({ answer:z.string().nullable().optional(),request: humanRequestSchema.nullable(), resumeReceipt: z.unknown().nullable().optional() }),
   }, async (args) => {
     const record = await humanRequests.get(args.requestId);
+    if(args.includeAnswer){
+      if(!record?.decisionKey || record.kind!=="user") throw new Error("Answer readback requires a coordinator decision card");
+      const producer=await (options.decisionProducer??loadAskHumanProducer)(process.env);
+      if(!producer) throw new Error("No configured decision producer");
+      const result=await readNoticeUserAnswer(record,producer,options.fetchDecisionResult??fetch);
+      if(result && record.resultRef && result.resultRef!==record.resultRef) throw new Error("Decision answer reference mismatch");
+      return structuredResult({request:record,answer:result?.answer??null});
+    }
     const target = record && humanRequestResumeTarget(record);
     if (!record || !target || !record.idempotencyKey || !record.resultRef || !options.queryReceipt) {
       return structuredResult({ request: record, resumeReceipt: null });

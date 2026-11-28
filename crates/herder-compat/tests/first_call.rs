@@ -11,6 +11,7 @@ use serde_json::json;
 struct Native {
     lists: Arc<AtomicUsize>,
     calls: Arc<AtomicUsize>,
+    cancelled: Arc<tokio::sync::Notify>,
 }
 
 impl ServerHandler for Native {
@@ -26,8 +27,13 @@ impl ServerHandler for Native {
         self.lists.fetch_add(1, Ordering::SeqCst);
         Ok(ListToolsResult::with_all_items(vec![Tool::new("discover", "read fixture", json!({"type":"object"}).as_object().unwrap().clone())]))
     }
-    async fn call_tool(&self, request: CallToolRequestParams, _: RequestContext<RoleServer>) -> Result<CallToolResponse, ErrorData> {
+    async fn call_tool(&self, request: CallToolRequestParams, ctx: RequestContext<RoleServer>) -> Result<CallToolResponse, ErrorData> {
         self.calls.fetch_add(1, Ordering::SeqCst);
+        if request.name == "hung" {
+            ctx.ct.cancelled().await;
+            self.cancelled.notify_one();
+            return Err(ErrorData::internal_error("fixture cancelled", None));
+        }
         if request.name != "discover" {
             return Err(ErrorData::invalid_params("native unknown tool", None));
         }
@@ -76,5 +82,45 @@ async fn cached_client_calls_native_tool_after_reconnect_without_listing() {
         client.cancel().await.unwrap();
         upstream.cancel().await.unwrap();
         edge_server.abort(); native_server.abort();
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn hung_native_call_has_an_edge_deadline_and_honors_cancellation() {
+    use std::time::Duration;
+    let (client_io, server_io) = tokio::io::duplex(16 * 1024);
+    let native = Native::default();
+    let cancelled = native.cancelled.clone();
+    let (server, client) = tokio::join!(
+        native.serve(server_io),
+        async {
+            let client = ClientConfig::new(ClientCapabilities::default(), Implementation::new("deadline-test", "1"))
+            .with_protocol_version(ProtocolVersion::V_2026_07_28)
+            .serve_with_lifecycle(client_io, ClientLifecycleMode::Discover {
+                preferred_versions: vec![ProtocolVersion::V_2026_07_28],
+            }).await.unwrap();
+            client.peer().list_tools(None).await.unwrap();
+            client
+        }
+    );
+    let server = server.unwrap();
+    let edge = LegacyEdge::new(client.peer().clone());
+    for cancel in [false, true] {
+        let ctx = RequestContext::new(rmcp::model::RequestId::Number(7), server.peer().clone());
+        let token = ctx.ct.clone();
+        let started = tokio::time::Instant::now();
+        if cancel {
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                token.cancel();
+            });
+        }
+        let limit = Duration::from_secs(if cancel { 2 } else { 160 });
+        let error = tokio::time::timeout(limit, edge.call_tool(CallToolRequestParams::new("hung"), ctx))
+            .await.expect("edge did not release its caller").unwrap_err();
+        assert!(started.elapsed() < limit);
+        assert!(error.message.contains(if cancel { "cancelled" } else { "deadline" }));
+        tokio::time::timeout(Duration::from_secs(1), cancelled.notified()).await
+            .expect("native handler did not receive notifications/cancelled");
     }
 }

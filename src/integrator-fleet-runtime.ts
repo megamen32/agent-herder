@@ -1,3 +1,4 @@
+import { taskOptions, type TaskOptions } from "./effort-tier-policy.js";
 import { randomUUID } from "node:crypto";
 import { hostname, homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -19,7 +20,7 @@ import type { HarnessAdapter } from "./types/index.js";
 import type { CodexServiceTier } from "./types/index.js";
   // ORCHESTRATOR-CONFLICT: src/integrator-fleet-runtime.ts:16 — его импорты (IntegratorLaunchReceipt, FleetHarness, HarnessAdapter) сохранены; добавлен наш value-импорт fleetHarnesses (маршрут гарна): набор ours ⊃ theirs, потеря его кода нет.
 
-export interface IntegratorFleetCreateInput {
+export interface IntegratorFleetCreateInput extends TaskOptions {
   project: string;
   inputId: string;
   name: string;
@@ -514,7 +515,7 @@ export class IntegratorFleetRuntime {
         integratorSessionBindingStore: this.options.bindingStore,
         projectRuntimeOwner: owner,
       });
-      const session = await adapter.createSession({ name: input.name.trim(), cwd: project.rootPath, model: project.model, serviceTier: input.serviceTier });
+      const session = await adapter.createSession({ name: input.name.trim(), cwd: project.rootPath, model: project.model, ...taskOptions(input) });
       const binding = await this.options.bindingStore.get(input.inputId);
       const attempt = binding?.attempts.at(-1);
       if (binding?.state !== "accepted" || attempt?.state !== "accepted"
@@ -525,7 +526,8 @@ export class IntegratorFleetRuntime {
       }
       const address = { hostId: attempt.hostId, harness: "codex" as const, nativeSessionId: session.id };
       this.sessions.set(addressKey(address), { adapter, owner, project, operationId: input.inputId });
-      return await this.createdReceipt(input, address, project, attempt.scope.rootIdentity);
+      return { ...await this.createdReceipt(input, address, project, attempt.scope.rootIdentity),
+        settingsDecision: session.meta?.settingsDecision, effectiveSettings: session.meta?.effectiveSettings };
     } catch {
       await adapter?.dispose().catch(() => undefined);
       return { state: "unknown", inputId: input.inputId, retryable: false, reason: "project_scoped_create_outcome_unknown" };

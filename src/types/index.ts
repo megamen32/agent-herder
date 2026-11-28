@@ -7,6 +7,7 @@ export {
   type SendMessageResult,
   type MessageAdmissionResult,
   type CreateSessionOptions,
+  type ClaudeCreateSettings,
   type CodexServiceTier,
   type SessionServiceTierState,
   type SessionServiceTierResult,

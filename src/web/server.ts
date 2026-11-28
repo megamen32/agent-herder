@@ -1,3 +1,4 @@
+import { sessionMessagesResourceUri } from "../herder-resource-uris.js";
 import { LOCAL_RECOVERY_WAIT_PATH, observeInstalledRecoveryWait } from "../process-wait-gate.js";
 import { CANONICAL_RUNTIME_STATUS_PATH, CanonicalRuntimeStatusError, parseCanonicalRuntimeStatusRequest, type CanonicalRuntimeStatusSource } from "../canonical-runtime-status.js";
 import {incidentSessionPolicy} from '../automation/incident-session-router.js';
@@ -125,6 +126,7 @@ import {
   writeSessionLabel,
   SESSION_LABEL_LIMITS,
 } from "../session-labels.js";
+import { completionStatus, refreshCodexTurn } from "../session-completion.js";
 import { publishHealthRefusal, type HerderEventBus } from "../herder-events.js";
 import type { HerderJobRegistry } from "../herder-jobs.js";
 import { checkCodexQuota, loadCodexQuotaPolicy, saveCodexQuotaPolicy } from "../codex-quota-guard.js";
@@ -3447,6 +3449,22 @@ async function route(request: IncomingMessage, response: ServerResponse, supervi
     request.once("close", cleanup);
     response.once("close", cleanup);
     return;
+  }
+
+  const completionMatch = url.pathname.match(/^\/api\/sessions\/codex\/([^/]+)\/status$/u);
+  if (request.method === "GET" && completionMatch) {
+    if (!events) return sendJson(response, 503, { error: "Event journal is disabled" });
+    const id = decodeURIComponent(completionMatch[1]);
+    if (id.length > 512) return sendJson(response, 400, { error: "Invalid session ID" });
+    const route = await resolveSessionRoute("codex", id);
+    if (route.kind === "deny") return sendJson(response, 409, { error: "Project-scoped session binding could not be verified." });
+    await refreshCodexTurn(events, route.adapters.get("codex"), id).catch(() => {});
+    response.setHeader("cache-control", "no-store");
+    const status = completionStatus(events,id);
+    if(url.searchParams.get("includeMessages")==="1"){
+      return sendJson(response,200,{...status,messageRevision:events.revision(sessionMessagesResourceUri("codex",id))});
+    }
+    return sendJson(response, 200, status);
   }
 
   if (request.method === "GET" && url.pathname === "/api/events") {

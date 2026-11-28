@@ -14,6 +14,7 @@ export interface HumanQuestionNativeTarget {
 }
 
 export interface AskHumanInput {
+  decision?: {decisionKey:string;decisionFingerprint:string};
   kind: "user" | "secret";
   /** The exact existing native session. Agent Herder never discovers a target. */
   target: CreateHumanRequestInput["target"];
@@ -63,6 +64,7 @@ export async function askHuman(
   const message = input.message === undefined ? undefined : validateMessage(input.message);
   const choices = validateChoices(input.choices, message);
   const record = await registry.create({
+    ...input.decision,
     kind: input.kind,
     target: input.target,
     // Only this seam produces a Notice question row, so only this seam may point

@@ -38,6 +38,22 @@ impl LegacyEdge {
     }
 }
 
+// Browser owners allow 120 seconds for a composed native operation. Leave
+// room for the receipt, but never wait indefinitely on a stalled native peer.
+async fn bounded<T>(
+    ctx: RequestContext<RoleServer>,
+    call: impl std::future::Future<Output = Result<T, ErrorData>>,
+) -> Result<T, ErrorData> {
+    tokio::select! {
+        biased;
+        _ = ctx.ct.cancelled() => Err(ErrorData::internal_error(
+            "MCP request cancelled; reconcile submitted operations by request key", None)),
+        result = tokio::time::timeout(std::time::Duration::from_secs(150), call) =>
+            result.unwrap_or_else(|_| Err(ErrorData::internal_error(
+                "Native response deadline exceeded; reconcile submitted operations by request key", None))),
+    }
+}
+
 fn helper_tool(name: &str) -> Tool {
     let schema = match name {
         "compat_task" => json!({"type":"object","properties":{"action":{"type":"string","enum":["get","answer","cancel"]},"task_ref":{"type":"string"},"request_ref":{"type":"string"},"answer":{}},"required":["action"],"additionalProperties":false}),
@@ -72,8 +88,10 @@ impl ServerHandler for LegacyEdge {
         (LEGACY_TOOLS.contains(&name) && self.helper_available(name)).then(|| helper_tool(name))
     }
 
-    async fn list_tools(&self, cursor: Option<PaginatedRequestParams>, _: RequestContext<RoleServer>) -> Result<ListToolsResult, ErrorData> {
-        let mut listing = self.upstream.list_tools(cursor).await.map_err(|_| ErrorData::internal_error("Native tool discovery failed", None))?;
+    async fn list_tools(&self, cursor: Option<PaginatedRequestParams>, ctx: RequestContext<RoleServer>) -> Result<ListToolsResult, ErrorData> {
+        let mut listing = bounded(ctx, async {
+            self.upstream.list_tools(cursor).await.map_err(|_| ErrorData::internal_error("Native tool discovery failed", None))
+        }).await?;
         let names = listing.tools.iter().map(|tool| tool.name.to_string()).collect::<HashSet<_>>();
         if names.iter().any(|name| LEGACY_TOOLS.contains(&name.as_str())) {
             return Err(ErrorData::internal_error("Native discovery collides with a reserved compatibility tool", None));
@@ -92,7 +110,19 @@ impl ServerHandler for LegacyEdge {
         Ok(listing)
     }
 
-    async fn call_tool(&self, request: CallToolRequestParams, _: RequestContext<RoleServer>) -> Result<CallToolResponse, ErrorData> {
+    async fn call_tool(&self, request: CallToolRequestParams, ctx: RequestContext<RoleServer>) -> Result<CallToolResponse, ErrorData> {
+        bounded(ctx, self.forward_tool(request)).await
+    }
+
+    async fn read_resource(&self, request: ReadResourceRequestParams, ctx: RequestContext<RoleServer>) -> Result<ReadResourceResponse, ErrorData> {
+        bounded(ctx, async {
+            self.upstream.read_resource_once(request).await.map_err(|_| ErrorData::internal_error("Resource read failed", None))
+        }).await
+    }
+}
+
+impl LegacyEdge {
+    async fn forward_tool(&self, request: CallToolRequestParams) -> Result<CallToolResponse, ErrorData> {
         let args = request.arguments.unwrap_or_default();
         match request.name.as_ref() {
             "compat_task" => {
@@ -146,9 +176,5 @@ impl ServerHandler for LegacyEdge {
                 }
             }
         }
-    }
-
-    async fn read_resource(&self, request: ReadResourceRequestParams, _: RequestContext<RoleServer>) -> Result<ReadResourceResponse, ErrorData> {
-        self.upstream.read_resource_once(request).await.map_err(|_| ErrorData::internal_error("Resource read failed", None))
     }
 }

@@ -45,6 +45,10 @@ function readerFor(adapter: HarnessAdapter, harness: string, sessionId: string):
   return reader;
 }
 
+export async function readSessionTranscriptPage(adapter:HarnessAdapter,scope:TranscriptSessionScope,limit:number,cursor?:string) {
+  return readIntegratorTranscriptPage({scope, cursor, limit, reader: readerFor(adapter, scope.harness, scope.nativeSessionId)});
+}
+
 async function readLatestCodexPage(adapter: HarnessAdapter, scope: TranscriptSessionScope, limit: number, cursor?: string) {
   const page = await adapter.getCodexHistoryPage!(scope.nativeSessionId, limit, cursor);
   if (!page) throw new Error("Codex history is unavailable");
@@ -103,7 +107,7 @@ export async function handleIntegratorSessionTranscript(
     if (!session || session.id !== sessionId || session.harness !== harness) { sendJson(response, 404, { error: "Exact native session not found" }); return true; }
     const page = latest
       ? await readLatestCodexPage(adapter, scope, limit, cursor)
-      : await readIntegratorTranscriptPage({scope, cursor, limit, reader: readerFor(adapter, harness, sessionId)});
+      : await readSessionTranscriptPage(adapter,scope,limit,cursor);
     sendJson(response, 200, {
       session: { id: session.id, harness: session.harness, status: session.status, lastActivity: session.lastActivity },
       transcript: page,

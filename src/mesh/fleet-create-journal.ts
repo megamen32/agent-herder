@@ -7,7 +7,7 @@ type Entry={digest:string;receipt:FleetCreateReceipt};
 /** Scope+stable input identity is intent identity, never a fabricated native session ID. */
 export class FleetCreateJournal {
  constructor(private readonly path:string,private readonly scope:FleetScope){this.scope=Object.freeze({...scope});}
- async once(request:FleetCreateRequest,operation:()=>Promise<FleetCreateReceipt>):Promise<FleetCreateReceipt>{
+ async once(request:FleetCreateRequest,operation:()=>Promise<FleetCreateReceipt>,reconcile?:()=>Promise<FleetCreateReceipt | undefined>):Promise<FleetCreateReceipt>{
   const key=createHash('sha256').update(JSON.stringify([this.scope.profileId,this.scope.userId,request.hostId,request.inputId])).digest('hex');
   const digest=createHash('sha256').update(JSON.stringify(request)).digest('hex');
   const reject=(reason:string,retryable:boolean):FleetCreateReceipt=>({state:'not_attempted',inputId:request.inputId,retryable,reason});
@@ -17,7 +17,15 @@ export class FleetCreateJournal {
   try{
    const entries=JSON.parse(await readFile(this.path,'utf8')) as Record<string,Entry>;
    if(!entries||typeof entries!=='object'||Array.isArray(entries))throw new Error('Invalid fleet journal');
-   const previous=entries[key];if(previous)return previous.digest===digest?previous.receipt:reject('input_id_conflict',false);
+   const previous=entries[key];
+   if(previous){
+    if(previous.digest!==digest)return reject('input_id_conflict',false);
+    if(previous.receipt.state==='unknown' && reconcile){
+     const observed=await reconcile().catch(()=>undefined);
+     if(observed?.state==='created'){previous.receipt=observed;await this.persist(entries);}
+    }
+    return previous.receipt;
+   }
    if(Object.keys(entries).length>=2048)return reject('fleet_intent_capacity',true);
    const unknown:FleetCreateReceipt={state:'unknown',inputId:request.inputId,retryable:false};
    entries[key]={digest,receipt:unknown};await this.persist(entries);

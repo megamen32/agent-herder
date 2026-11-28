@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AgentInfoSchema,
   CreateSessionSchema,
+  DeliverSchema,
   ExportTranscriptSchema,
   ListAgentsSchema,
   NewOrResumeSchema,
@@ -17,6 +18,33 @@ function harnessEnum(toolName: string): string[] {
 }
 
 describe("canonical MCP harness definitions", () => {
+  it("preserves the integrated named-session and delivery schema", () => {
+    for (const schema of [CreateSessionSchema, NewOrResumeSchema]) {
+      const { effort, reasoningEffort, serviceTier, sourceHarness, sourceSessions } = schema.shape;
+      expect({
+        effort: effort.unwrap().options.join("|"),
+        reasoningEffort: reasoningEffort.unwrap().options.join("|"),
+        serviceTier: serviceTier.unwrap().options.join("|"),
+        sourceHarness: sourceHarness.unwrap().options.join("|"),
+        sourceSession: sourceSessions.unwrap().element.shape.harness.options.join("|"),
+      }).toMatchInlineSnapshot(`
+        {
+          "effort": "low|medium|high|xhigh|max",
+          "reasoningEffort": "none|low|medium|high|xhigh|max|ultra",
+          "serviceTier": "normal|fast",
+          "sourceHarness": "codex|claude|zcode|opencode|fast-agent",
+          "sourceSession": "codex|claude|zcode|opencode|fast-agent",
+        }
+      `);
+      expect(effort.description).toContain("Claude-only");
+      expect(reasoningEffort.description).toContain("Codex-only");
+    }
+    expect(() => DeliverSchema.parse({ harness: "codex", sessionId: "test", message: "inspect", effort: "high" })).toThrow(/reasoningEffort/);
+    expect(Object.keys(DeliverSchema.shape)).toEqual(expect.arrayContaining([
+      "humanCitations", "project", "taskClass", "reasoningEffort", "latencySensitive", "serviceTier",
+    ]));
+  });
+
   it("accepts Fast Agent named creation and resume with an explicit model", () => {
     const input = { harness: "fast-agent", name: "api-worker", cwd: "/workspace", model: "generic.MiniMax-M3" };
     for (const name of ["create_session", "new_or_resume"]) {

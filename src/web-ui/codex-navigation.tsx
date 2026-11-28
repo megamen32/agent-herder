@@ -51,7 +51,29 @@ export function CodexNavigation(props: NavigationProps) {
     { id: "settings", label: "Настройки", action: props.onSettings, href: pageHref("settings") },
     { id: "menu", label: "Ещё", action: props.onMenu },
   ];
-  return <nav className="codex-navigation" aria-label="Основная навигация">
+  const dialog = React.useRef<HTMLDialogElement>(null);
+  const [query, setQuery] = React.useState("");
+  const matches = items.filter(item => item.label.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  const openCommands = React.useCallback(() => {
+    setQuery("");
+    dialog.current?.showModal();
+  }, []);
+  React.useEffect(() => {
+    const shortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        if (dialog.current?.open) dialog.current.close();
+        else openCommands();
+      }
+    };
+    window.addEventListener("keydown", shortcut);
+    return () => window.removeEventListener("keydown", shortcut);
+  }, [openCommands]);
+  const runCommand = (action: () => void) => {
+    dialog.current?.close();
+    action();
+  };
+  return <><nav className="codex-navigation" aria-label="Основная навигация">
     <div className="codex-navigation-items">{items.map((item) => {
       const selected = item.id === "chat"
         ? props.active === "chat" && props.chatsOpen
@@ -67,6 +89,28 @@ export function CodexNavigation(props: NavigationProps) {
       // а средний клик / «открыть в новой вкладке» открывает раздел по адресу.
       return <a key={item.id} href={href} title={item.label} aria-label={item.label} aria-controls={item.id === "chat" ? "herder-chat-list" : undefined} aria-expanded={item.id === "chat" ? props.chatsOpen : undefined} aria-current={selected ? "page" : undefined} className={className} onClick={(event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); item.action(); }}>{icon}{label}</a>;
     })}</div>
-    <span className="codex-navigation-mark" title="Agent Herder">AH</span>
-  </nav>;
+    <button type="button" className="command-trigger" aria-label="Палитра команд" aria-keyshortcuts="Meta+K Control+K" title="Палитра команд (⌘K / Ctrl+K)" onClick={openCommands}>
+      <span aria-hidden="true">⌘</span><span className="nav-label">Команды</span>
+    </button>
+  </nav>
+    <dialog ref={dialog} className="command-dialog" aria-label="Палитра команд"
+      onClick={event => { if (event.target === dialog.current) dialog.current.close(); }}
+      onKeyDown={event => {
+        if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+        const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>(".command-results button"));
+        if (!buttons.length) return;
+        event.preventDefault();
+        const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+        const next = event.key === "ArrowDown" ? index + 1 : index < 0 ? buttons.length - 1 : index - 1;
+        buttons[(next + buttons.length) % buttons.length].focus();
+      }}>
+      <div className="command-search">
+        <input autoFocus aria-label="Поиск команды" placeholder="Найти команду…" value={query} onChange={event => setQuery(event.target.value)}
+          onKeyDown={event => { if (event.key === "Enter" && matches[0]) runCommand(matches[0].action); }} />
+        <button type="button" aria-label="Закрыть палитру" onClick={() => dialog.current?.close()}>Esc</button>
+      </div>
+      <div className="command-results">{matches.map(item =>
+        <button type="button" key={item.id} onClick={() => runCommand(item.action)}>{item.label}</button>
+      )}{matches.length === 0 && <p role="status">Команд не найдено</p>}</div>
+    </dialog></>;
 }

@@ -1,9 +1,10 @@
+import type { TaskOptions } from "./effort-tier-policy.js";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { homedir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 
-export interface DeferredMessage { id: string; sessionId: string; message: string; createdAt: string; harness?: string;
+export interface DeferredMessage { id: string; sessionId: string; message: string; createdAt: string; harness?: string; taskOptions?: TaskOptions;
   activeTurn?: {harness:string;identity:string;inputId:string;digest:string;expiresAt:number;state:'pending'|'offered'|'hook_returned'|'expired';deferredIds?:string[]};
 }
 type State = { version: 1; messages: DeferredMessage[] };
@@ -11,7 +12,7 @@ type State = { version: 1; messages: DeferredMessage[] };
 export class DeferredMessageStore {
   private chain: Promise<unknown> = Promise.resolve();
   constructor(private readonly filePath = process.env.AGENT_HERDER_DEFERRED_MESSAGES || resolve(homedir(), ".local/state/agent-herder/deferred-messages.json")) {}
-  async add(sessionId: string, message: string, harness?: string): Promise<DeferredMessage> { return this.serial(async () => { const s=await this.read(); const prior=s.messages.find(m=>!m.activeTurn && m.sessionId===sessionId && m.message===message); if (prior) return prior; const m={id:randomUUID(),sessionId,message,createdAt:new Date().toISOString(),...(harness?{harness}:{})}; s.messages.push(m); await this.write(s); return m; }); }
+  async add(sessionId: string, message: string, harness?: string, taskOptions?: TaskOptions): Promise<DeferredMessage> { return this.serial(async () => { const s=await this.read(); const prior=s.messages.find(m=>!m.activeTurn && m.sessionId===sessionId && m.message===message); if (prior) return prior; const m={id:randomUUID(),sessionId,message,createdAt:new Date().toISOString(),...(harness?{harness}:{}),...(taskOptions?{taskOptions}:{})}; s.messages.push(m); await this.write(s); return m; }); }
   /** Every durably parked regular (non active-turn) message across all sessions. */
   async listAll(): Promise<DeferredMessage[]> { return this.serial(async () => (await this.read()).messages.filter(m=>!m.activeTurn)); }
   async list(sessionId: string): Promise<DeferredMessage[]> { return this.serial(async () => (await this.read()).messages.filter(m=>!m.activeTurn && m.sessionId===sessionId)); }
@@ -87,8 +88,8 @@ export function isBusyCodexWriter(harness: string, error?: string): boolean {
  * extended with other parked messages: every parked message is dispatched by its
  * own delivery (which removes it on admission) or by the sweeper, so piggy-backing
  * would duplicate concurrently in-flight work. */
-export async function parkForDelivery(harness:string, sessionId:string, message:string):Promise<{message:string; ids:string[]}> {
-  const parked=await deferredMessages.add(sessionId,message,harness);
+export async function parkForDelivery(harness:string, sessionId:string, message:string, options?: TaskOptions):Promise<{message:string; ids:string[]}> {
+  const parked=await deferredMessages.add(sessionId,message,harness,harness === "codex" ? options : undefined);
   return {message,ids:[parked.id]};
 }
 

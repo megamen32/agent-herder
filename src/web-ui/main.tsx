@@ -68,6 +68,7 @@ import { readSessionListSettings, writeSessionListSettings, SESSION_LIST_SHOW_CO
 import { readModelTimeline, writeModelTimeline, recordModelAt, modelAt, latestModel, type ModelTimelineEntry } from "./session-model-timeline.js";
 import type { UploadedImage } from "../session-images.js";
 import type { HarnessCapabilities, HarnessPermissionState, SessionMessageView } from "../types/index.js";
+import "./workspace.css";
 
 type HerderSession = SessionListSession & {
   lastMessage?: string;
