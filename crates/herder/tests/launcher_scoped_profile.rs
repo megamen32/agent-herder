@@ -2652,7 +2652,7 @@ for line in sys.stdin:
     fs::write(&adapter, r#"import json,sys
 for line in sys.stdin:
  r=json.loads(line);m=r['method']
- if m=='initialize':v={'harness':'chatgpt','capabilities':{'methods':['init','listSessions','getSession','getSessionMessages','sendMessage'],'deliveryModes':['queue']}}
+ if m=='initialize':v={'harness':'chatgpt','capabilities':{'methods':['init','listSessions','getSession','getSessionMessages','createSession','sendMessage'],'deliveryModes':['queue']}}
  elif m=='init':v=None
  else:raise Exception('unexpected AHAP effect: '+m)
  print(json.dumps({'jsonrpc':'2.0','id':r['id'],'result':v}),flush=True)
@@ -2705,7 +2705,7 @@ def exercise(mode):
  def call(method,params,seconds=3):
   nonlocal pending,seq
   seq+=1
-  if not compat:params['_meta']=meta
+  params['_meta']={'principal':'other-admin'} if compat else meta
   p.stdin.write((json.dumps({'jsonrpc':'2.0','id':seq,'method':method,'params':params})+'\n').encode());p.stdin.flush()
   deadline=time.monotonic()+seconds
   while b'\n' not in pending:
